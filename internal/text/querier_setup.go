@@ -189,7 +189,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
 	traceChatf(ctx, "new querier model config path=%q", configPath)
-	if err := userConf.StepRetry.validate(); err != nil {
+	if err := userConf.StepRetry.Validate(); err != nil {
 		return Querier[C]{}, diag.Errorf("new querier: %w", err)
 	}
 	// The diagnostic level never selects the debug display: raising it
@@ -202,8 +202,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 	traceChatf(ctx, "new querier model config loaded path=%q", configPath)
 
-	if runenv.DebugEnabled(ctx, runenv.SubsystemTextQuerier) {
-		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "userConf: %v\n", debug.IndentedJsonFmt(userConf))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemTextQuerier) {
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "userConf: %v\n", debug.IndentedJsonFmt(userConf))
 	}
 	querier.cmdBan = append([]string(nil), userConf.CmdBan...)
 	querier.Raw = userConf.Raw
@@ -285,9 +285,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 	traceChatf(ctx, "user is: %v", currentUser.Name)
 	querier.Model = modelConf
-	traceChatf(ctx, "querier: %v,\n===\nmodels: %v\n",
-		debug.IndentedJsonFmt(querier),
-		debug.IndentedJsonFmt(modelConf))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemChat) {
+		runenv.Tracef(ctx, runenv.SubsystemChat, "querier: %v,\n===\nmodels: %v\n", debug.IndentedJsonFmt(querier), debug.IndentedJsonFmt(modelConf))
+	}
 	querier.chat = userConf.InitialChat
 	querier.systemPrompt = userConf.SystemPrompt
 	traceChatf(ctx, "new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))

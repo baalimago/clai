@@ -33,7 +33,8 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 	if err != nil {
 		return diag.Errorf("failed to setup prompt from stdin: %w", err)
 	}
-	runenv.Debugf(ctx, runenv.SubsystemPhoto, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
+	runenv.Debugf(ctx, runenv.SubsystemPhoto, "prompt: bytes=%d", len(prompt))
+	runenv.Tracef(ctx, runenv.SubsystemPhoto, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
 	c.Prompt += fmt.Sprintf(c.PromptFormat, prompt)
 	return nil
 }

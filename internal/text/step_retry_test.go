@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-var stepRetrySchedule = []time.Duration{time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second}
+var stepRetrySchedule = resend.Default().Delays
 
 func stepRetry503() error {
 	return claierr.NewProviderUnavailable(&claierr.APIError{StatusCode: 503, Body: "upstream connect error"})
@@ -64,7 +65,7 @@ func (f *stepRetryFixture) querier(script func(request int) (chan models.Complet
 		out:     &f.stdout,
 		errOut:  &f.stderr,
 		tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"echo": stepRetryTool{ran: &f.toolRuns}})},
-		stepRetry: StepRetry{
+		stepRetry: resend.Schedule{
 			Delays: stepRetrySchedule,
 			Wait: func(_ context.Context, d time.Duration) error {
 				f.waits = append(f.waits, d)
@@ -316,7 +317,7 @@ func (r *stepRetryRecorder) Record(_ context.Context, call CompletedModelCall) e
 func TestStepRetry_ZeroValueMakesOneRequest(t *testing.T) {
 	f := &stepRetryFixture{}
 	q := f.querier(func(int) (chan models.CompletionEvent, error) { return nil, stepRetry503() })
-	q.stepRetry = StepRetry{}
+	q.stepRetry = resend.Schedule{}
 
 	if _, err := q.TextQuery(context.Background(), stepRetryChat()); !errors.Is(err, claierr.ErrProviderUnavailable) {
 		t.Fatalf("err = %v, want ErrProviderUnavailable", err)
@@ -407,48 +408,6 @@ func TestStepRetry_AFailedNoticeDoesNotEndTheRun(t *testing.T) {
 		}
 		if len(f.requests) != 2 {
 			t.Fatalf("requests = %d, want 2", len(f.requests))
-		}
-	})
-}
-
-func TestDefaultStepRetry_IsTheAgreedSchedule(t *testing.T) {
-	got := DefaultStepRetry()
-	if !slices.Equal(got.Delays, stepRetrySchedule) {
-		t.Fatalf("Delays = %v, want %v", got.Delays, stepRetrySchedule)
-	}
-	if got.Wait == nil {
-		t.Fatal("Wait is nil")
-	}
-	if err := got.validate(); err != nil {
-		t.Fatalf("validate: %v", err)
-	}
-}
-
-func TestStepRetry_ValidateRefusesDelaysWithoutAWait(t *testing.T) {
-	err := StepRetry{Delays: stepRetrySchedule}.validate()
-	if !errors.Is(err, ErrStepRetryWithoutWait) {
-		t.Fatalf("err = %v, want ErrStepRetryWithoutWait", err)
-	}
-	if err := (StepRetry{}).validate(); err != nil {
-		t.Fatalf("zero value: %v", err)
-	}
-}
-
-func TestWaitForStepRetry(t *testing.T) {
-	t.Run("returns after the delay", func(t *testing.T) {
-		if err := waitForStepRetry(context.Background(), time.Millisecond); err != nil {
-			t.Fatalf("err = %v", err)
-		}
-	})
-	t.Run("returns the cancellation at once", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		started := time.Now()
-		if err := waitForStepRetry(ctx, time.Hour); !errors.Is(err, context.Canceled) {
-			t.Fatalf("err = %v, want context.Canceled", err)
-		}
-		if elapsed := time.Since(started); elapsed > time.Second {
-			t.Fatalf("took %v", elapsed)
 		}
 	})
 }

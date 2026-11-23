@@ -26,19 +26,20 @@ import (
 // This is a version rule and not a model list because a list goes stale at the
 // vendor's next release and silently brings the 400 back (as gpt-6 did for OpenAI).
 type Claude struct {
-	Model              string                     `json:"model"`
-	MaxTokens          int                        `json:"max_tokens"`
-	URL                string                     `json:"url"`
-	AnthropicVersion   string                     `json:"anthropic-version"`
-	AnthropicBeta      string                     `json:"anthropic-beta"`
-	Temperature        float64                    `json:"temperature"`
-	TopP               float64                    `json:"top_p"`
-	TopK               int                        `json:"top_k"`
-	StopSequences      []string                   `json:"stop_sequences"`
-	PrintInputCount    bool                       `json:"print_input_count"`
-	client             *http.Client               `json:"-"`
-	apiKey             string                     `json:"-"`
-	debugFullStreamMsg string                     `json:"-"`
+	Model              string       `json:"model"`
+	MaxTokens          int          `json:"max_tokens"`
+	URL                string       `json:"url"`
+	AnthropicVersion   string       `json:"anthropic-version"`
+	AnthropicBeta      string       `json:"anthropic-beta"`
+	Temperature        float64      `json:"temperature"`
+	TopP               float64      `json:"top_p"`
+	TopK               int          `json:"top_k"`
+	StopSequences      []string     `json:"stop_sequences"`
+	PrintInputCount    bool         `json:"print_input_count"`
+	client             *http.Client `json:"-"`
+	apiKey             string       `json:"-"`
+	debugFullStreamMsg string       `json:"-"`
+	summary            *generic.StreamSummary
 	tools              []pub_models.Specification `json:"-"`
 	functionName       string                     `json:"-"`
 	functionID         string                     `json:"-"`

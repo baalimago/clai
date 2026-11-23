@@ -13,14 +13,18 @@ to read audio bytes from stdin.
 ```
 internal/cli:Run()
   → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
+    → audio → v|voices → a|add, l|list  # the voice library (voicescmd); no querier
     → audio → transcribe subcommand (Subcommander tree, internal/audio/cmd.go)
+      → no file: transcribe's help and the error on stderr, exit 1
       → setupAudioTranscribeQuerier()
       → resolveAudioInput()           # positional file, or '-' → stdin temp file
                                       # (container sniffed → real extension, see sniff.go)
       → LoadConfigFromFile("audioConfig.json")
       → applyFlagOverridesForAudio()
+      → resolveKnownVoices()          # -voices without ffmpeg stops here (Known voices)
+        → Library.Select(-voices, max-voices)     # whom to name, read once
       → CreateAudioQuerier()          # vendor routing + splitter
-  → querier.Query(ctx)                # transcribe → render → stdout
+  → querier.Query(ctx)                # transcribe → name → tally → render → stdout
 ```
 
 ## Key Files
@@ -30,13 +34,14 @@ internal/cli:Run()
 | `internal/audio/cmd.go`                     | audio Subcommander tree — transcribe\|help verbs (see [cmd-dispatch.md](./cmd-dispatch.md))           |
 | `internal/audio/board.go`                   | Adapter over the shared progress table ([board.md](./board.md)): diarization columns, `unknownSoFar` |
 | `internal/audio/request_status.go`          | The status of a transcription sent as one request (see Progress)                                      |
+| `internal/audio/request_retry.go`           | `resending`: a transcriber whose request is sent again on the schedule (see Request retries)          |
 | `internal/audio/generic/stream.go`          | `WithHeard`/`ReportHeard`, `ParseStream`: a diarized transcript streamed as server-sent events        |
 | `internal/audio/setup_transcribe.go`        | Transcribe-querier setup, stdin `-` input resolution                                                  |
 | `internal/audio/audio.go`                   | `Segment` model, JSON parsing, `vtt\|srt\|text\|json` rendering, `Offset`                            |
 | `internal/audio/split.go`                   | `Splitter`: byte-cap gate; routes by `Diarization()`: plain ffmpeg chunking, the request-local re-encode, or calibration |
 | `internal/audio/plan.go`, `assemble.go`     | `ChunkPlanner` (silence-aligned cores under the seconds budget), `AudioAssembler` (PCM timeline, MP3 encode, manifests) |
-| `internal/audio/sample.go`, `registry.go`, `mapping.go`, `discovery.go` | Sample extraction, append-only speaker registry, label mapping, bootstrap and discovery |
-| `internal/audio/coordinator.go`, `stitch.go`, `cache.go` | Parallel coordinator with request accounting, `unknown-N` stitching, run-scoped request cache |
+| `internal/audio/sample.go`, `merge.go`, `registry.go`, `mapping.go` | Sample extraction, the chained merge of survey candidates (`ChainMerger`), the speaker registry, label mapping |
+| `internal/audio/coordinator.go`, `stitch.go`, `cache.go` | The survey path (survey, merge, labelling pass, join, retry) with request accounting, `unknown-N` stitching, run-scoped request cache |
 | `internal/audio/eval.go`                    | Acceptance evaluator: annotation parsing, one-to-one attribution report                              |
 | `internal/audio/sniff.go`                   | `DetectExtension`: container magic → file extension                                                   |
 | `internal/audio/querier.go`                 | `Configurations`, `TranscribeQuerier`, mock transcriber                                               |
@@ -46,6 +51,11 @@ internal/cli:Run()
 | `internal/vendors/openrouter/transcribe_diarize.go` | `ParseDiarized`: OpenRouter's diarized `verbose_json` to speaker turns                        |
 | `internal/audio/create_querier.go`          | `audio.CreateQuerier()`/`createSplitter()` — model routing; audio-transcribe tool bridge initialization |
 | `pkg/tools/audio_tool_transcribe.go`        | `audio_transcribe` built-in tool (thin adapter, injected engine)                                      |
+| `internal/audio/known_voices.go`            | Known voices in a transcription: the ffmpeg stop, the selection, naming with the route's own transcriber, the tally, the naming warnings; the runtime's voices dependencies |
+| `internal/audio/namer.go`, `naming.go`      | `Namer`: two naming requests of picked clips and candidates, agreement; the naming report and its JSON |
+| `internal/audio/voices/`                    | The voice library: `Library` (the files, the event log, ranking) and `Inspector` (imports nothing of `internal/audio`) |
+| `internal/audio/voicescmd/`                 | `clai audio v\|voices a\|add\|l\|list`, mounted under `audio` beside `transcribe` (`voicescmd.Command`); its menu draws through `internal/menu` |
+| `pkg/tools/audio_tool_remember_voice.go`    | `audio_remember_voice` built-in tool (injected `AudioRememberVoiceDeps`)                               |
 
 ## Configuration
 
@@ -56,11 +66,9 @@ internal/cli:Run()
   "transcribe": {
     "model": "whisper-1",
     "output-format": "vtt",
-    "parallelism": 3,
     "max-request-bytes": 26214400,
     "max-request-seconds": 1400,
-    "max-speakers": 8,
-    "strict-speakers": false
+    "max-voices": 12
   }
 }
 ```
@@ -71,11 +79,10 @@ internal/cli:Run()
 | -------------------------- | -------------------------------------------------------------------- |
 | `transcribe.model`         | Transcription model; routed to a vendor by name (see Vendor Routing), or a root-level `model-aliases` verb such as `fast` (see [model-aliases.md](./model-aliases.md)) |
 | `transcribe.output-format` | Local render format: `vtt` (default), `srt`, `text`, or `json`       |
-| `transcribe.parallelism`   | Max concurrent chunk requests when a large file is split (default 3) |
+| `transcribe.parallelism`   | Caps the requests in flight when a large file is split. Unset (absent, 0 or negative, the default): the speaker labelling path sends every request of a stage at once, the plain path 3 chunks at a time. A positive value caps both paths, the merge's requests included; a file that holds one keeps it |
 | `transcribe.max-request-bytes`   | Per-request upload cap for both split paths (default 25 MiB); zero means default, negative is an error |
 | `transcribe.max-request-seconds` | Per-request audio cap for calibrated diarization (default 1400 s) |
-| `transcribe.max-speakers`        | Speaker registry cap for calibrated diarization (default 8); sizes the prefix reserve |
-| `transcribe.strict-speakers`     | Error instead of `unknown-N` output when a material speaker stays unresolved (default false) |
+| `transcribe.max-voices`          | People named by default: everyone in the voice library with a confirmed clip, best first, up to this many (default 12; absent means 12). 0 names nobody unless `-voices` or a tool call does; negative is a load error. It never caps the people named |
 
 ### Flag Overrides
 
@@ -86,8 +93,7 @@ internal/cli:Run()
 | `-parallelism`          | `transcribe.parallelism`   |
 | `-max-request-bytes`    | `transcribe.max-request-bytes`   |
 | `-max-request-seconds`  | `transcribe.max-request-seconds` |
-| `-max-speakers`         | `transcribe.max-speakers`        |
-| `-strict-speakers`      | `transcribe.strict-speakers`     |
+| `-voices`               | — the people to name, comma separated (Known voices); not a config field |
 
 Precedence is the standard cascade: flags > file > defaults (see
 [`config.md`](./config.md)).
@@ -225,7 +231,7 @@ Files over 25 MB exceed the vendor request cap. The `Splitter`
    underestimates the duration, as it does for a VBR MP3 without a Xing
    header. A cue that ends past its window is clamped to the window, never
    before its own start.
-3. Transcribes chunks in a bounded worker pool (`parallelism`).
+3. Transcribes chunks in a bounded worker pool (`parallelism`, 3 when unset).
 4. Offsets timestamps and stitches chunks in order.
 5. Prefixes every speaker label with its chunk when there is more than one
    chunk, because labels are request-local (see below).
@@ -261,7 +267,7 @@ stuck one:
 | --- | --- |
 | one request (the file as it is) | a status: `r.wav · 1 request · 19.2 MB`, `heard mm:ss` while a streaming provider answers, then `transcribed · N segments` or the failure |
 | encoded for one request (request-local labels) | a status: `r.wav · 55.3 MB · encoding for 1 request`, then `requesting · 13.8 MB` and as above; when the encoded file is still over the byte cap, `encoded … MB, over the 25 MB request cap: splitting`, the chunk board, and the status's end after it |
-| split, calibrated | the chunk board (one row per chunk or core) |
+| split, calibrated | the chunk board (one row per chunk or core); the speaker labelling board's words are below |
 
 A status has no rows. Under `-json` with no `StatusOut` each state change is
 one `progress` record on the run's stderr (`start`, `update`, `done` or
@@ -281,18 +287,74 @@ the same file unstreamed answered after 33.2 s. A stream that ends before
 `transcript.text.done` is `generic.ErrStreamEnded`, never a short transcript.
 The calibrated route attaches no `Heard`, so its requests are not streamed.
 
+The speaker labelling board (Adaptive Speaker Calibration) has the plain
+board's columns, marks and records, with its own words:
+
+| Element | Text |
+| --- | --- |
+| header | `speaker labelling  r.wav  5 chunks × 17m31s  ≤23 requests` (3 per chunk plus 2 per merge link) |
+| phases, in order | `finding voices · 5 chunks`, `matching voices · 31 clips` (the candidates), `labelling · 5 chunks · 6 speakers`, `second try · 2 chunks with unmatched voices` (only when a chunk needs one), `stitching`, `done · N segments · 17m elapsed` |
+| row, a request in flight | `finding voices · 17m31s`, `labelling · 19m0s`, `second try · 19m11s`; a resend shows `retry 2/4 in 10s · 429`, then `labelling · try 3` |
+| row, between survey and labelling | `6 voices found` (the chunk's material survey labels) |
+| row, final | `✓ labelled · 6 speakers`, or `✗ 2 unmatched · 6 speakers` (material labels naming nobody); `request failed` when a request of the chunk failed the run; a failed second try keeps the row's labelling result |
+| `req` cell | the chunk's requests so far, `2/3` |
+| live footer | `≈7m left (≤14m) · 9m elapsed · requests 10/≤23 · resent 0 · in flight 5 · speakers 6 · unknown 0s · uploaded 1h37m`; `in flight` counts rows, so a merge request is not in it |
+| final footer | `requests 18/≤23 · resent 0 · retries 0 · cache hits 0 · uploaded 3h18m · speakers 6 · unknown 0s · 17m elapsed`, failures included |
+| finishing lines | `found 10 voices; more than 8 usually means one person was not recognised across chunks` when the merge found more than 8, then `chunk 3 (35:00–52:30) second try failed: provider unavailable (503); its labelling result is kept` per failed second try, then the unknown-speech summary |
+
+The estimate counts, per unfinished chunk, its survey and labelling requests
+left and the merge links left at the measured rate; the worst case adds a
+second try for every chunk.
+
 The mock transcriber (`test`, `mock_test`) answers at once, or, with
 `CLAI_MOCK_TRANSCRIBE_DELAY` set to a Go duration, spreads its answer over
 that long and reports each of its segments as heard, so a caller's progress
 display can be tested without a provider.
 
+## Request retries
+
+Every transcription request is sent again when the provider may answer it
+later: the single request, each plain chunk, every request of the speaker
+labelling path (`survey`, `merge-forward`, `merge-reversed`, `labelling`,
+`retry`) and both naming requests. The mechanism and the schedule
+are the text query's (`internal/resend`, [query.md](./query.md#request-retry)):
+waits of 1s, 10s, 30s and 60s, then the last error fails the run as before.
+
+- Sent again: a rate limit (429), a provider failure (5xx) and a request
+  that got no answer (`resend.Throttled`). The generic transcriber gives a
+  failed status its `claierr` meaning through the vendor's decoder, and a
+  failed `client.Do` is `claierr.ErrTransport`.
+- Never sent again: a rejected key, an empty account (a 429
+  `insufficient_quota` included), a request the provider rejected, and a
+  failure inside an answer that had begun.
+- A wait is never shorter than the provider's `Retry-After`
+  (`claierr.APIError.RetryAfter`, seconds or an HTTP date).
+- The wait happens inside the worker that holds the request, so the other
+  chunks go on.
+- A request sent again is the same request: there is no per-chunk limit to
+  spend, and it is not one of the chunk's requests. The footer counts them as
+  `resent`, beside `retries`, the second tries the labelling path sent.
+- The row shows `retry 2/4 in 10s · 429` (`· no answer` without a status)
+  while it waits, then `<purpose> · try 3`.
+- Once the schedule is spent a model alias moves on to its next model, as
+  for any unavailable model.
+- `Splitter.Retry` is a collaborator: `createSplitter` sets
+  `resend.Default()`, and the zero value sends once.
+
 ## Adaptive Speaker Calibration
 
-Implemented 2026-09-02; the worklog with the measurements and decisions is
-[`worklogs/2026-09-01-adaptive-speaker-calibration/`](../worklogs/2026-09-01-adaptive-speaker-calibration/).
+Implemented 2026-09-02 ([`worklogs/2026-09-01-adaptive-speaker-calibration/`](../worklogs/2026-09-01-adaptive-speaker-calibration/),
+cited as `asc`: the planner, assembler, mapper, budgets and provider facts);
+its chunk-by-chunk speaker discovery was replaced on 2026-11-22 by the survey path
+([`worklogs/2026-11-20-survey-calibration/`](../worklogs/2026-11-20-survey-calibration/README.md)).
 An oversized recording transcribed with an anchored diarizer (OpenAI's
 diarize family, the provider the anchoring was measured on) takes this path
-instead of the plain split above.
+instead of the plain split above: every chunk is heard once (the survey), the
+voices it found are merged into one registry, and only then is every chunk
+transcribed against that registry (the labelling pass). On the 88-minute
+Retro the H1 measurement of that worklog took 18 requests and about 17
+minutes, against 12 serial requests and 67.8 minutes for the chunk-by-chunk
+path before it.
 
 ### Provider contract and evidence
 
@@ -310,7 +372,7 @@ and never assumes that request 2's `A` is request 1's `A`.
 This behavior was **measured before implementation** by the Phase 0 spike
 (2026-09-02): with one clean clip per voice, every sample received one
 dominant label, all samples were distinct, and 99.8% of core speech mapped to
-a prefix label in two of two forward-order requests. Two provider facts
+a prefix label in two of two forward-order requests. Provider facts that
 constrain the design:
 
 1. The provider over-segments within a single request. The reference meeting
@@ -325,8 +387,13 @@ constrain the design:
    chunk agree on 67–78% of speech, anchored repeats on about 94%. Two
    distinct samples can share a label depending on prefix order, and a
    speaker's speech can be split away from that speaker's own clip. The
-   design recovers from both (reversed-order retry, discovery) and never
-   treats a single request as proof of identity.
+   design recovers from both (the reversed order of the second try, the join)
+   and never treats a single request as proof of identity.
+4. Many clips in one request merge voices (H1, 2026-11-22): 25 candidate
+   clips of the Retro in one request gave two people one label in both
+   orders, while 7 clips kept six people apart. Hence the chained merge below,
+   of 9–13 clips per request. Five survey requests at once all answered in
+   5.2–6.3 minutes with no 429.
 
 Provider-native `known_speaker_names`/`known_speaker_references` are not used
 in the pipeline. The stated cap is four references of 2–10 s, which cannot hold
@@ -339,10 +406,11 @@ Every request is bounded by two configurable budgets: `max-request-bytes`
 must fit) and `max-request-seconds` (default 1400 s). A zero config value
 means the default; a negative value is a load-time error. The planner runs once per recording and
 sizes each core interval as the seconds budget minus a fixed prefix reserve
-minus a 2% safety margin, then checks the encoded bytes. The reserve is
-`max-speakers` (default 8) worst-case sample slots of 11 s each, so a speaker
-discovered late never pushes a core over the budget and nothing is replanned.
-The tighter of the two budgets wins.
+minus a 2% safety margin, then checks the encoded bytes. The reserve is fixed
+at 8 sample slots of 11 s (88 s), the most voices the path labels, so no
+prefix pushes a core over the budget and nothing is replanned. The tighter of the two budgets wins. Every request, the merge's
+clips-only requests included, is assembled and checked against both budgets
+before upload; a request of samples and no core extracts no core audio.
 
 Requests are re-encoded, never stream-copied. The assembler first builds a
 canonical PCM timeline (mono, 16 kHz, signed 16-bit) so every boundary is a
@@ -360,129 +428,214 @@ planner moves each planned boundary to the nearest silence midpoint within 10%
 of the target length so no utterance is cut, falling back to the planned time
 when no silence exists in the window.
 
+### Survey and merge
+
+A local label is **material** when it has at least 3 s of speech and at least
+1% of the chunk's speech. Non-material labels are still mapped when they match
+a clip; otherwise their speech is kept and rendered as `unknown-N`. A segment
+without a speaker is no label for any decision below.
+
+1. **Survey.** Every chunk is transcribed once, all at once, with no prefix
+   (kind `survey`). Its labels are used to cut candidates and for nothing
+   else: no survey segment reaches the output.
+2. **Candidates.** Each material label of each survey answer gives one
+   candidate: its best clip of 3–10 s (longest speech, then clearance from
+   other labels), named `c<chunk>-<label>`. A material label with no such run
+   gives none.
+3. **Merge** (`ChainMerger`, `merge.go`). The candidates of the first chunk
+   that has any each begin one voice, with no request: the survey already kept
+   one chunk's voices apart. Every later chunk with candidates is one link, in
+   chunk order, each sent only when the one before it is decided: two
+   requests at once, made only of clips and no core, holding the best clip of
+   every voice so far and that chunk's candidates, forward by source start
+   and in exactly the opposite order (kinds `merge-forward`,
+   `merge-reversed`). A clip is settled in a request when one label holds at
+   least 80% of its labelled speech. Clips settled in both orders on the same
+   pair of labels are one voice: a candidate with a voice's pair joins that
+   voice, two voices with one pair become one, candidates sharing a new pair
+   begin a voice together, and an unsettled clip joins nothing.
+4. **Registry.** The voices become `speaker-1`, `speaker-2`, … numbered by
+   each voice's earliest clip in source time, each with its clips ranked
+   (longer speech, larger clearance, earlier start); its sample is the first.
+   More than 8 voices is a sign the merge failed to group someone, not a real
+   meeting: the 8 with the most survey speech are kept, the others' speech
+   becomes `unknown-N`, and the board's finishing lines say
+   `found 10 voices; more than 8 usually means one person was not recognised across chunks`.
+
+A recording with no material label sends no merge request; its labelling
+requests equal its surveys and are answered by the cache.
+
 ### Speaker sample registry
 
-During one source recording, the splitter maintains a registry with one global
-speaker ID and one active clean audio sample for each verified voice. A sample
-contains 3–10 s of one local label with guard silence, chosen as the longest
-segment with the largest clearance from other labels. Registry entries are
+The registry holds one global speaker ID per voice the merge found, with the
+voice's ranked clips; the first is the speaker's sample. Registry entries are
 recording-local and claim no real-world identity.
 
 ```text
-global speaker A
-  sample: source 00:02:14.2–00:02:22.0
-  quality: speech=7.8s, clearance=2.1s, verified-in=3 requests
+speaker-2
+  clips: source 00:00:18.0–00:00:28.0, 00:15:00.0–00:15:10.0
+  sample: the first clip
 ```
 
-The registry is append-only and holds at most `max-speakers` identities; a
-candidate beyond that is left unmapped with reason `prefix-reserve-exhausted`.
-Adding a speaker never invalidates a chunk that already mapped every label. A
-sample is replaced only when it fails verification in a later request, cut
-from the speaker's verified source ranges; at most two replacements per
-speaker. Every mutation (add, replace, ambiguity replacement, freeze, refusal)
-enters through one serialized entry point under the discovery lock with a
-snapshot version re-check; the worklog lists them as a table and no other
-mutation exists.
+It is built by the merge and changes at most once more, by the join, which
+only joins speakers: no speaker is added after the merge, and no sample
+changes for the run. A speaker the survey heard in no chunk stays `unknown-N`.
 
 ### Calibration prefix and mapping
 
-Before a chunk is transcribed, the assembler builds one ordinary request:
+**Labelling pass.** Every chunk is transcribed once more, all at once (kind
+`labelling`), with one clip per registry speaker, its sample, ordered by
+source start:
 
 ```text
-[speaker A sample][silence][speaker B sample][silence]...[core audio]
+[speaker-1 sample][silence][speaker-2 sample][silence]...[core audio]
 ```
 
 The splitter knows every sample interval in request time. Labels returned
 inside those intervals map request-local labels to global speakers:
 
 ```text
-global A sample → local C
-global B sample → local A
-target local C → global A
-target local A → global B
+speaker-1 sample → local C
+speaker-2 sample → local A
+target local C → speaker-1
+target local A → speaker-2
 ```
 
-A sample maps when one local label covers at least 80% of its labeled speech
-and no other accepted sample shares that label. Every request that carries a
-sample verifies it; there are no dedicated verification requests. A sample
-that is mixed or missing fails that request's mapping and is replaced. Two
-accepted samples sharing one label is ambiguity: the chunk is retried once
-with the reversed prefix order and no registry change, and only a repeated
-ambiguity replaces the samples. A collapse never merges two verified
-identities.
+**Join.** After every labelling request has answered, and once: two speakers
+agree when at least 2 labelling requests settle both their clips and every
+request that settles both gives them the same label. Speakers are taken in
+registry order; a speaker joins the earliest earlier speaker it agrees with,
+unless some request settled it on a different label than a speaker already
+joined there. Two speakers whose survey candidates of one chunk held labels of
+their own do not agree when that chunk's labelling answer holds a material
+label no registry clip settled on: the survey heard two people there, and the
+labelling request heard one's clip as the other's, so a clip is bad and a voice
+is left over (the 88-minute Retro, 2026-11-23). A survey that splits one
+person leaves nothing over, and still joins. The `join refused` record names
+such pairs. The joined speaker holds the clips of both, and the registry is
+numbered again by earliest clip, so the output has no gap. Labelling records
+carry the IDs before the join; the `join` and `registry` records give the
+mapping.
 
-### Discovery
+**Mapping.** In a labelling or second-try answer, a label names a speaker when
+the registry clips settled on it all belong to one speaker after the join. A
+label on which clips of two speakers settled names nobody: identity is never
+merged by guesswork.
 
-A local label is **material** when it has at least 3 s of speech and at least
-1% of the chunk's speech. Only material labels create speakers. Non-material
-labels are still mapped when they match a sample; otherwise their speech is
-kept and rendered as `unknown`.
+**Second try.** A chunk whose labelling answer leaves a material label naming
+nobody is sent exactly once more (kind `retry`), with everything fixed at
+once: the registry clips in the opposite order when clips of two speakers
+settled on one label; for every speaker none of whose clips settled on a
+label of its own (no clip settled, or its clip shared a label with another
+speaker's), its next-ranked clip not yet sent for this chunk, in that request
+only; and,
+after the registry clips, one candidate clip for each material label no
+registry clip settled on, cut from that label's speech in the labelling
+answer, most speech first, as many as keep the prefix at 8 clips. A second
+try that would equal the labelling request is not sent. Speech under a label
+only a candidate settled on names nobody. The second try's answer replaces
+the labelling answer only when it maps more speech; otherwise the labelling
+answer stays.
 
-1. Transcribe the first core chunk without a prefix.
-2. Extract one candidate sample for every material label, assemble the prefix
-   from all candidates, and transcribe the same chunk once more.
-3. Candidates that collapse onto one label are one voice; keep the better clip.
-   Candidates with a dominant, distinct label are promoted. Mixed candidates
-   are replaced once and the chunk is retried.
-4. For a later chunk, unmapped material labels trigger discovery: take the
-   discovery lock, re-read the registry (another worker may have added the
-   voice), extract candidates for all unmapped labels, and retranscribe the
-   chunk once with the extended prefix. At most two discovery iterations per
-   chunk.
-
-Discovery is serialized; all other chunks run in parallel against a frozen
-registry snapshot. Accepted chunk results are final.
-
-Budget: at most 4 requests per chunk, an injectable coordinator field that
-equals the longest production path (bootstrap: two passes, one mixed-candidate
-iteration, one recovery retry; later chunks: one pass, one recovery retry, two
-discovery iterations). The recovery retry is one slot per chunk, spent either
-on the reversed-order retry or on a sample replacement, and discovery runs
-only once the chunk's latest request shows no failed registry sample: a
-failed speaker's speech is unanchored and must never seed a candidate. Every transcription request counts, including bootstrap
-passes, discovery iterations, and replacement retries; cache hits are
-reported, not counted. There is no run limit and no cost limit: uploaded
-audio is bounded by the per-chunk limit times the chunk count times
-`max-request-seconds`. Exhaustion is an error under both policies and is
-reported with the affected source interval, labels, attempts, and consumed
-requests.
+**Length.** A run sends at most 3 requests per chunk (survey, labelling,
+second try) plus 2 per merge link, one link per chunk after the first: 23 for
+5 chunks. No stage runs twice and none waits on an answer to end.
+`parallelism` unset sends every request of a stage at once; a set value caps
+the requests in flight, the merge's pair included.
 
 ### Stitching and failure policy
 
-For every accepted chunk, the splitter maps labels to global IDs, removes the
-prefix intervals, restores core timestamps from the sample-count manifest, and
-appends segments in source order; no codec timestamp correction is applied
-(the spike measured a median shift below the tolerance). A run-scoped in-memory cache keyed by request
-bytes hash, model, endpoint, and request options prevents paying twice for an
-identical request.
+For every chunk, the splitter takes its kept answer, maps labels to global
+IDs, removes the prefix intervals, restores core timestamps from the
+sample-count manifest, and appends segments in source order; no codec
+timestamp correction is applied (the spike measured a median shift below the
+tolerance). Every output segment comes from a labelling or second-try answer.
+A run-scoped in-memory cache keyed by request bytes hash, model, endpoint,
+and request options prevents paying twice for an identical request.
 
-Best-effort is the default. Speech whose label cannot be mapped is rendered as
-`unknown-N`, numbered at stitch time per contiguous unmapped run in source
-order, with a stderr summary of duration and reason per unknown. Labels are
-never merged by temporal proximity, text, or a forced speaker count. With
-`strict-speakers` enabled (config field and `-strict-speakers` flag), any
-unresolved material label is an error with the same diagnostics and no
-transcript on stdout.
+Speech whose label cannot be mapped is rendered as
+`unknown-N`, numbered at stitch time per voice: one unmapped local label of
+one chunk is one `unknown-N` for all its runs, in order of first appearance.
+The provider keeps a label to one voice within a request, so this merges
+nothing the provider did not; the same voice in two chunks is still two
+names. The stderr summary gives duration, run count and reason per unknown
+voice. Labels are never merged by temporal proximity, text, or a forced
+speaker count. There is no strict mode: an unresolved label never fails
+the run, because `unknown-N` can be named afterwards and a failed run loses
+the whole transcription (`strict-speakers` was removed on 2026-11-22; an old
+config that still sets it loads, as unknown fields are ignored).
+`max-speakers` was removed with the survey path: room for 8 voices is fixed,
+and an old config that still sets it loads.
+
+What fails the run: a failed plan; a survey, merge or labelling request that
+fails at assembly or a budget check, is refused for the key or the account,
+or is not answered once its resends are spent; and an ended context at any
+stage. The run then returns the error with its cause, cancels the requests in
+flight, removes its files and leaves the board with its footer. A failed
+second try does not fail the run, whatever the cause but an ended context:
+the chunk keeps its labelling answer, its unmatched speech stays `unknown-N`,
+and the finishing lines say `chunk 3 (35:00–52:30) second try failed:
+<cause>; its labelling result is kept`, since the second try only improves
+labels and an account running out of credit is likeliest at the end of a
+long run.
+
+### Investigating a run
+
+`LOG_LEVEL=warn,audio=debug` writes the calibration's decisions to stderr,
+one `calibration <event> key=value ...` line per event, with no transcript
+text, audio, key or header. Chunk lines carry `chunk=N attempt=M`, where
+`attempt` is the chunk's request count so far; a merge request's lines carry
+`link=N`, N being the chunk whose candidates the link holds. Times are source
+seconds unless a key says otherwise.
+
+| Event | Says |
+| --- | --- |
+| `plan`, `plan-core` | the budgets, `voices=8`, the 88 s reserve, the core target and silences, `parallelism=all\|<n>` and `requests_max` (3 per chunk plus 2 per link); each core's planned and aligned end with the reason |
+| `request` | the `kind` (`survey`, `merge-forward`, `merge-reversed`, `labelling`, `retry`), core (`0.0-0.0` for a merge request), request seconds and bytes, `cache=hit\|miss`, and the prefix in order as `id@source>request` intervals |
+| `request-retry` | a request about to be sent again: its `kind`, `try=n/4`, the `delay` in seconds and the `cause` (`"rate limited (429)"`, `"provider unavailable (503)"`, `"connection failed: …"`). The chunk's `attempt` does not move |
+| `response`, `sample`, `label` | per survey, labelling and second-try answer: the verdict counts and `took`, the seconds the request took (0.0 on a cache hit); each sample's dominant label, share and verdict; each local label's core speech, materiality and global id, or the reason it has none. A labelling answer's records carry the IDs before the join |
+| `candidate` | per material survey label: the clip cut as `id=c<chunk>-<label>`, its speech, clearance and the label's survey speech, or `id=- reason=no-run-of-sample-length` |
+| `merge` | per clip of a link: both verdicts as `label:share` and the outcome (`held`, `merged`, `joined`, `new`, `unsettled`) with its voice; per voice found: its speaker (`-` over the cap of 8), clips, sample and survey speech; then `state=done links= found= kept=` |
+| `join` | per join: `from=`, `into=`, `shared=` (the requests that settle both) and `apart=0`; per pair the survey kept apart: `refused a= b= shared= chunks=` (the chunks whose survey heard both and whose labelling answer left a voice no clip settled on); then `state=done joined= speakers=` |
+| `registry` | only after a join: each speaker with the IDs it held before the join (`was=speaker-1+speaker-3`), its clip count and sample |
+| `retry` | per chunk with a material label naming nobody: `state=start` with `reversed`, `swapped` (`speaker@old>new`), `candidates` and `pending`; then `outcome=accepted` or `outcome=kept reason=no-gain` with `mapped`, `unknown` and `material_unmapped` as `before>after`, or `outcome=kept reason=request-failed cause="…"`; or `state=skipped reason=nothing-to-change` |
+| `accepted`, `unmapped` | once per chunk, when its answer is final: the local-to-global map, its `requests`, `resent` and `retries`, mapped and unknown seconds, and each unmapped label with its reason |
+| `unknown`, `stitched` | which `unknown-N` names each chunk produced, with voice and run counts, and the run totals |
+| `naming`, `naming-speaker`, `naming-voice` | known voices: the candidate clip cut per speaker and whom it was named, or why nobody |
+
+Every HTTP request adds `transcription request` (URL, model, format) and
+`transcription response` (status, body bytes or segment count, `took`); a
+plain chunk or a naming request sent again adds `transcription retry
+request=chunk-2/5 try=… delay=… cause=…`. The response body is shown only at
+`audio=trace`. A debug log of an 88-minute recording is about 40–60 KB, most
+of it these records: the agent turn around it adds one line per model
+response and two per tool call ([output.md](./output.md), "Diagnostics"),
+not content.
 
 ### Main implementation boundaries
 
-`internal/audio/` owns chunk planning, sample selection, prefix assembly,
-discovery, continuous verification, and stitching. The shared segment parser
-remains unchanged. `internal/vendors/openai/` continues to own only OpenAI
-request behavior. Suggested injected units are `ChunkPlanner`,
-`SampleExtractor`, `AudioAssembler`, `SpeakerRegistry`, and `LabelMapper`;
-ffmpeg and transcription calls must remain mockable for deterministic tests.
+`internal/audio/` owns chunk planning, sample selection, prefix assembly, the
+survey, the merge, the labelling pass, the join, the second try and
+stitching. The shared segment parser remains unchanged.
+`internal/vendors/openai/` continues to own only OpenAI request behavior. The
+injected units are `ChunkPlanner`, `SampleExtractor`, `AudioAssembler`,
+`Merger` (`ChainMerger`) and `LabelMapper`; ffmpeg and transcription calls
+must remain mockable for deterministic tests.
 
 ### Required tests
 
-Tests must cover successful calibration across permuted local labels, several
-new speakers in one chunk, spurious labels collapsing onto an existing voice,
-mixed sample rejection and replacement, exact request-interval mapping,
-byte and seconds budget enforcement, silence-aligned boundaries, bounded
-discovery iterations, cache reuse, prefix removal, serialized discovery with
-frozen-registry parallelism, best-effort `unknown` rendering, strict failure,
-and cancellation. The end-to-end fixture contains annotated speaker intervals
-and measures attribution quality; six output strings alone are not evidence.
+Tests must cover, over the scripted diarizer and the fake runner only: every
+chunk labelled from a survey whose first chunk holds few of the people, no
+survey segment in the output, the fixed 88 s reserve, the merge (its own
+contract in `merge_test.go`), the join and the cases that join nothing, the
+second try fixing everything at once and kept only when it maps more, a voice
+matching nobody kept as one `unknown-N`, more than 8 voices, `parallelism`
+unset and capped, the fixed path length, every request kind sent again, each
+real failure and the failed second try that does not fail the run, the event
+log and the board's words, and the path end to end through the `Splitter`
+with the real assembler. The end-to-end fixture contains annotated speaker
+intervals and measures attribution quality; six output strings alone are not
+evidence.
 
 ## Temporary Investigation Recording
 
@@ -527,17 +680,21 @@ identities and no count-forcing post-pass.
 
 `audio_transcribe` (built-in tool) is a thin adapter over the same engine:
 `pkg/tools` declares the schema (`file_path` required; `output_format` enum
-defaulting to `text` — model context rarely wants VTT framing) and delegates
-to an engine function injected by the clai runtime. The tool layer contains no
+defaulting to `text` — model context rarely wants VTT framing; `voices`, an
+optional array of the people expected, see Known voices; a `voices` that is
+not an array of strings is refused before anything is transcribed) and
+delegates to an engine function injected by the clai runtime,
+`AudioTranscribeEngine(ctx, AudioTranscribeCall)`. The tool layer contains no
 transcription logic. Select it with `-t audio_transcribe` or `-t "*"`; inspect
 it with `clai tools audio_transcribe`.
 
 The engine loads `audioConfig.json` itself, so the model does **not** come
 from the calling command's config. A query, loop or chat can still configure
-the tool for the run with `-am`/`-af`, which
+the tool for the run with `-am`/`-af`/`-voices`, which
 `audio.SetTranscribeOverrides` layers on top (model overrides the file;
 format overrides the tool call's own `output_format`, since an explicit
-user choice outranks the model's per-call pick). An invalid `-af` fails at
+user choice outranks the model's per-call pick; `-voices` names the people
+of every call that names nobody of its own). An invalid `-af` fails at
 setup, not mid-conversation. A profile's `audio.model` reaches the same
 global, resolved before the flags are re-applied (`text.ApplyProfileOverrides`),
 so `-am` wins. Without a flag or a profile key the tool keeps using the
@@ -559,6 +716,98 @@ profile names an audio model, from `audioConfig.json` or the shipped ladders
 when the file is absent, so a broken audio config never fails a run whose
 profile has no audio model.
 
+## Known voices
+
+A diarized transcript names the people the user already knows instead of
+labelling them A, B. The library is `<clai-config>/voices/`
+(`internal/audio/voices`): short clips per person, ranked by how their
+namings fare. It grows by hand (`clai audio voices add <wav> [-from s]
+[-to s] [-name n]`), is browsed and corrected with `clai audio voices list
+[person [clip [action]]] [-json]`, and grows on its own through the
+`audio_remember_voice` tool, whose clips stay unconfirmed until the user
+keeps them. `v`, `a` and `l` are the short names of `voices`, `add` and
+`list`: `clai a v l lorentz` is `clai audio voices list lorentz`.
+
+Whom a transcription names is resolved once, before the recording is
+transcribed, by `Library.Select`: the `audio_transcribe` call's `voices`
+argument when it names anyone, else the run's `-voices` (`clai audio
+transcribe -voices 'Lorentz,Christoph' …`, or `-voices` on `query`/`chat`
+for the tool, beside `-am`/`-af`), else everyone with a confirmed clip up to
+`transcribe.max-voices`. A name the library does not hold is reported as
+`unknown-voice` and never fails the run.
+
+**Nobody to name changes nothing.** With an empty selection (nobody named and
+no confirmed clip, no `voices/`, or an unreadable library) the run makes
+today's requests and prints today's bytes; nothing under `voices/` is
+written. Reading the library for the selection is the only access.
+
+**Otherwise** the recording is transcribed as always (one request, a split or
+calibration), then `Namer.Name` puts the selection's picked clips before one
+candidate clip of each transcript speaker in two naming requests (forward and
+reversed order), both built first and then sent at once to the transcriber
+that transcribed the recording, within the run's request budgets; a failed
+send cancels the other. A speaker takes a person's name only when both orders
+agree. The picked clips' outcomes are tallied into
+the library once (`placed`/`named` events). Naming never fails a
+transcription: a failed request, no agreement, an unreadable library or a
+failed tally leave the speakers as transcribed and say why in the report; only
+the transcription's own failure fails the run. No clip audio leaves the
+machine except inside a naming request, and none is in any output. Nothing of
+this names a vendor or a model.
+
+**ffmpeg is a dependency of naming people, not a naming failure.** When people
+are named (the call's `voices`, else `-voices`) and `ffmpeg` does not resolve
+through the route's `CommandRunner.LookPath`, the run stops before the library
+is read and before any request, with a `*VoicesNeedFFmpegError` (`-voices
+needs ffmpeg …`, or `voices needs ffmpeg …` for the tool's argument): exit 1
+on `clai audio transcribe`, a failed tool result on the tool. With nobody named
+ffmpeg is not looked for: the empty selection needs none, and a default
+selection without it is transcribed and its naming is a failed request.
+
+**`clai audio transcribe` warns of what the naming did not do**, one
+`runenv.Warnf` warning of the `audio` subsystem per case (in text `warn
+[audio] <message>` on stderr), after the transcript is written; stdout is the
+same with or without them, and nothing is asked. With people named: `no voice
+"<name>" in the library` per unknown person, `voice library unreadable:
+<reason>; speakers left as labels`, `naming failed: <reason>; speakers left as
+labels`, `the transcript has no speaker labels; nobody named`, `no speaker
+talks long enough to compare; nobody named`, and `failed to find a match for
+<name>, were they in the meeting?` per person absent or not placed. Under the
+default selection only `naming failed: …` warns. An empty selection warns of
+nothing, and the `audio_transcribe` tool never warns: its result is its whole
+answer (`known_voices.go`, `namingWarnings`).
+
+Output with a non-empty selection:
+
+- `json` is one object, `{"segments": […], "naming": {…}}`, indented like
+  the bare array. A segment a clip named has its `speaker` set to the
+  person's plain name and `voice: {"clip": "<slug>/<id>", "status":
+  "confirmed"|"unconfirmed"}` between `speaker` and `text`; any other segment
+  is as transcribed. `naming` is the report: `status`, `origin` (`tool`,
+  `flag` or `library`), `speakers` (each label's name and voice, or its
+  `reason`), `voices` (each person's `result`), and `error`/`unrecorded`
+  when set.
+- `vtt`, `srt` and `text` are today's rendering with the name where the
+  label stood, written `<name> (unconfirmed)` when an unconfirmed clip gave
+  it, and nothing else.
+
+`CLAI_MOCK_TRANSCRIBE_SCRIPT` is the test seam: set to a JSON array of
+replies, the `test`/`test-diarize` mock answers a run's n-th Transcribe call
+with the n-th reply (`{start, end, speaker, text}` in seconds), so end-to-end
+rows and goldens drive a naming without a provider. The two naming requests,
+sent at once, take the next two replies by their order (forward, then
+reversed), whichever arrives first.
+
+The voices CLI and `audio_remember_voice` get the same library and an
+`Inspector` over `ExecRunner` from the runtime (`openVoices`,
+`pkg/tools.AudioRememberVoiceDeps`, set in `create_querier.go`'s `init`), read
+from `utils.GetClaiConfigDir` on every use. `voices` is a verb of `audio`,
+beside `transcribe`; `transcribe` takes a file and nothing else, so
+`clai audio transcribe voices` transcribes a file named `voices`. With no
+file, `transcribe` prints its help (the text of `clai audio transcribe -h`)
+and the missing-file error on stderr and exits 1, as `clai audio` does with
+no verb.
+
 ## Example
 
 ```bash
@@ -571,6 +820,9 @@ clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize mee
 clai -p meeting -t audio_transcribe q "Transcribe today's meeting"
 # speaker labels through OpenRouter:
 clai a t -am or:elevenlabs/scribe-v2+diarize meeting.wav
+# speakers named after the voice library (flags before the file):
+clai audio voices add rec.wav -from 61.2 -to 69 -name Lorentz
+clai audio transcribe -am gpt-4o-transcribe-diarize -voices 'Lorentz,Christoph' -af json meeting.wav
 ```
 
 A shared profile that must label speakers on a machine with either key names

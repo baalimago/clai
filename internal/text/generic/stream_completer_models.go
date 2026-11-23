@@ -246,7 +246,8 @@ type streamState struct {
 	// produced is set by text, reasoning, an image or a tool call.
 	produced bool
 	// calls are tool calls to send before the current line's own event.
-	calls []pub_models.Call
+	calls   []pub_models.Call
+	summary *StreamSummary
 }
 
 func (st *streamState) takeCalls() []models.CompletionEvent {

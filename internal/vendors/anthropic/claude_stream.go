@@ -104,8 +104,14 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) (chan models.CompletionEvent, error) {
 	outChan := make(chan models.CompletionEvent)
 	go func() {
-		br := bufio.NewReader(resp.Body)
+		summary := generic.NewStreamSummary()
+		c.summary = summary
+		br := bufio.NewReader(summary.Body(resp.Body))
+		record := func() {
+			summary.Record(func(line string) { runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "%s", line) })
+		}
 		defer func() {
+			record()
 			c.debugFullStreamMsg = ""
 			resp.Body.Close()
 			close(outChan)
@@ -160,6 +166,10 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			}
 			processed := c.handleToken(ctx, br, token)
 			sawEvent = true
+			if _, ended := processed.(error); ended {
+				summary.Tokens(c.amInputTokens, c.amOutputTokens)
+				record()
+			}
 			if pending != nil {
 				if _, ended := processed.(error); ended {
 					emitClaude(ctx, outChan, *pending)
@@ -171,9 +181,9 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				pending = &call
 				continue
 			}
-			if cast, ok := processed.(string); ok && runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+			if cast, ok := processed.(string); ok && runenv.TraceEnabled(ctx, runenv.SubsystemVendorAnthropic) {
 				c.debugFullStreamMsg += cast
-				runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "new bit: %v, full message: '%v'", cast, c.debugFullStreamMsg)
+				runenv.Tracef(ctx, runenv.SubsystemVendorAnthropic, "new bit: %v, full message: '%v'", cast, c.debugFullStreamMsg)
 			}
 			if !emitClaude(ctx, outChan, processed) {
 				return
@@ -276,7 +286,7 @@ func (c *Claude) handleToken(ctx context.Context, br *bufio.Reader, token string
 		return fmt.Errorf("unexpected token, want: 'event:', got: '%v'", eventTok)
 	}
 	eventType = strings.TrimSpace(eventType)
-	runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "eventTok: '%v', eventType: '%s'", eventTok, eventType)
+	c.summary.Event(eventType)
 	switch eventType {
 	case "message_stop":
 		return io.EOF
@@ -370,8 +380,8 @@ func (c *Claude) stringFromDeltaToken(ctx context.Context, deltaToken string) (D
 	if err != nil {
 		return Delta{}, diag.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJSONString, err)
 	}
-	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
-		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "delta struct: %+v\nstring: %v", debug.IndentedJsonFmt(contentBlockDelta), deltaJSONString)
+	if runenv.TraceEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+		runenv.Tracef(ctx, runenv.SubsystemVendorAnthropic, "delta struct: %+v\nstring: %v", debug.IndentedJsonFmt(contentBlockDelta), deltaJSONString)
 	}
 	return contentBlockDelta.Delta, nil
 }
@@ -383,8 +393,9 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	if err != nil {
 		return nil, err
 	}
-	if runenv.DebugEnabled(ctx, runenv.SubsystemClaudifiedMsgs) {
-		runenv.Debugf(ctx, runenv.SubsystemClaudifiedMsgs, "claudified messages: %+v", debug.IndentedJsonFmt(claudifiedMsgs))
+	runenv.Debugf(ctx, runenv.SubsystemClaudifiedMsgs, "claudified messages: count=%d", len(claudifiedMsgs))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemClaudifiedMsgs) {
+		runenv.Tracef(ctx, runenv.SubsystemClaudifiedMsgs, "claudified messages: %+v", debug.IndentedJsonFmt(claudifiedMsgs))
 	}
 
 	reqData := claudeReq{
@@ -419,8 +430,9 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)
-	if runenv.DebugEnabled(ctx, runenv.SubsystemVerbose) {
-		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "Request: %+v", req)
+	runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "request url=%s model=%s messages=%d tools=%d bytes=%d", c.URL, c.Model, len(claudifiedMsgs), len(c.tools), len(jsonData))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemVerbose) {
+		runenv.Tracef(ctx, runenv.SubsystemVendorAnthropic, "Request: %+v", req)
 	}
 	return req, nil
 }

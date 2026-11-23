@@ -317,8 +317,8 @@ What the HTTP status alone suggests, therefore safe in the generic layer:
 | 401, 403 | credentials rejected | `ErrAuthFailed` |
 | 402 | payment required | `ErrLikelyInsufficientCredits` |
 | 404 | route or model unknown | `ErrModelNotFound` |
-| 429 | throttled | `ErrRateLimited` |
-| 5xx | provider-side, retried by a CLI text query ([Request Retry](./query.md#request-retry)), otherwise **by the caller** | `ErrProviderUnavailable` |
+| 429 | throttled; a transcription sends the request again ([Request retries](./audio.md#request-retries)) | `ErrRateLimited` |
+| 5xx | provider-side, retried by a CLI text query ([Request Retry](./query.md#request-retry)) and by a transcription ([Request retries](./audio.md#request-retries)), otherwise **by the caller** | `ErrProviderUnavailable` |
 
 The baseline is a fallback, not ground truth (xAI's 403-for-drained-account
 and 400-shaped model-not-found from some providers are cases where the

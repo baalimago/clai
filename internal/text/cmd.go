@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/modelfallback"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/retry"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtally"
@@ -80,7 +81,7 @@ type QueryCommandDeps struct {
 	RunTallyTempRoot string
 	// StepRetry resends a model request that failed before its stream opened;
 	// the zero value makes one request.
-	StepRetry StepRetry
+	StepRetry resend.Schedule
 }
 
 // QueryCommand builds the query command. With -l the same composition wraps
@@ -500,11 +501,12 @@ func ApplyProfileOverrides(tConf *Configurations, tf internal.TextFlags) {
 }
 
 // mediaToolSettings are the media-tool values this run resolved: the audio
-// model the flags or the profile chose, and the -af format, which no profile
-// key sets.
+// model the flags or the profile chose, and the -af format and -voices people,
+// which no profile key sets.
 func mediaToolSettings(tf internal.TextFlags, tConf *Configurations) internal.MediaToolSettings {
 	return internal.MediaToolSettings{
 		AudioModel:  tConf.AudioModel,
 		AudioFormat: tf.AgentText.MediaTools.AudioFormat.Value(),
+		Voices:      internal.CommaList(tf.AgentText.MediaTools.Voices.Value()),
 	}
 }

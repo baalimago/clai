@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ type Region struct {
 	SrcEnd   time.Duration
 	// Clipped marks a sample whose guard hit a source bound
 	Clipped bool
-	// Candidate marks a discovery clip that is not yet a registry speaker
+	// Candidate marks a clip that is not a registry speaker's: a merge or retry candidate
 	Candidate bool
 }
 
@@ -62,39 +63,39 @@ type RequestManifest struct {
 	RequestHash    string
 }
 
-// SourceTime maps a request-time instant inside a sample or core region to
-// source time.
-func (m *RequestManifest) SourceTime(req time.Duration) (time.Duration, error) {
-	for _, r := range m.Regions {
-		if req < r.ReqStart || req >= r.ReqEnd {
-			continue
-		}
-		if r.Kind == RegionGap {
-			return 0, fmt.Errorf("request time %v falls in a synthesized gap", req)
-		}
-		return r.SrcStart + (req - r.ReqStart), nil
-	}
-	if req == m.Duration && len(m.Regions) > 0 {
-		last := m.Regions[len(m.Regions)-1]
-		return last.SrcEnd, nil
-	}
-	return 0, fmt.Errorf("request time %v is outside the request (%v)", req, m.Duration)
-}
-
 // SampleClip is a speech interval in source time; guards are added by the
 // assembler.
 type SampleClip struct {
 	ID    string
 	Start time.Duration
 	End   time.Duration
-	// Candidate clips belong to discovery, not to a registry speaker
+	// Candidate marks a clip that is not a registry speaker's: a merge or retry candidate
 	Candidate bool
 }
 
+// ErrEmptyRequest refuses a request with no sample and no core
+// (Assemble.2); callers match it with errors.Is.
+var ErrEmptyRequest = errors.New("request has no audio: no sample and no core")
+
+// AssembleRequest.Core may be the zero SourceInterval:
+//
+//   - Assemble.1 — With samples and a zero Core the request holds the samples
+//     and their gaps only. No core audio is extracted. The manifest ends with
+//     a core region of zero length at the end of the request, CoreStart and
+//     CoreEnd are 0, and Duration equals PrefixDuration. Both budgets are
+//     checked as for any request. (I5)
+//   - Assemble.2 — With no sample and a zero Core, Assemble returns
+//     ErrEmptyRequest and leaves no file behind.
+//   - Assemble.3 — A request with a core is assembled exactly as today: the
+//     same regions, bytes and RequestHash.
 type AssembleRequest struct {
 	Samples []SampleClip
 	Core    SourceInterval
 }
+
+func (r AssembleRequest) empty() bool { return len(r.Samples) == 0 && r.Core == SourceInterval{} }
+
+func (r AssembleRequest) hasCore() bool { return r.Core != SourceInterval{} }
 
 // AudioAssembler builds request files in two stages: an exact PCM timeline,
 // then one deterministic encode. Artifacts live in a run-scoped directory
@@ -128,8 +129,6 @@ func NewAssembler(runner CommandRunner, budgets Budgets, sourcePath string, sour
 	}, nil
 }
 
-func (a *AudioAssembler) RunDir() string { return a.runDir }
-
 // Close removes every artifact of the run.
 func (a *AudioAssembler) Close() error {
 	return os.RemoveAll(a.runDir)
@@ -144,6 +143,9 @@ func (a *AudioAssembler) Remove(m *RequestManifest) error {
 }
 
 func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (manifest *RequestManifest, err error) {
+	if req.empty() {
+		return nil, ErrEmptyRequest
+	}
 	base := filepath.Join(a.runDir, "req-"+strconv.FormatInt(a.seq.Add(1), 10))
 	workDir := base + ".work"
 	if err := os.Mkdir(workDir, 0o700); err != nil {
@@ -186,9 +188,11 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	}
 	m.PrefixDuration = durationOf(pos)
 	coreStart, coreEnd := snap(req.Core.Start), snap(req.Core.End)
-	n, err := a.extractPCM(ctx, coreStart, coreEnd, filepath.Join(workDir, "core.raw"), out)
-	if err != nil {
-		return nil, err
+	var n int64
+	if req.hasCore() {
+		if n, err = a.extractPCM(ctx, coreStart, coreEnd, filepath.Join(workDir, "core.raw"), out); err != nil {
+			return nil, err
+		}
 	}
 	appendRegion(Region{Kind: RegionCore, SrcStart: coreStart, SrcEnd: coreEnd}, n)
 	m.CoreStart, m.CoreEnd = coreStart, coreEnd
@@ -196,9 +200,8 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	if err := timeline.Close(); err != nil {
 		return nil, diag.Errorf("failed to flush timeline: %w", err)
 	}
-	if m.Duration > a.Budgets.MaxRequestDuration {
-		return nil, fmt.Errorf("request of %v exceeds max-request-seconds %v (prefix %v, core %v)",
-			m.Duration, a.Budgets.MaxRequestDuration, m.PrefixDuration, coreEnd-coreStart)
+	if err := checkRequestSeconds(m, a.Budgets.MaxRequestDuration); err != nil {
+		return nil, err
 	}
 	if err := a.encode(ctx, timelinePath, encoded); err != nil {
 		return nil, err
@@ -216,6 +219,14 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	hasher.Write([]byte(requestCodec))
 	m.RequestHash = hex.EncodeToString(hasher.Sum(nil))
 	return m, nil
+}
+
+func checkRequestSeconds(m *RequestManifest, limit time.Duration) error {
+	if m.Duration > limit {
+		return fmt.Errorf("request of %v exceeds max-request-seconds %v (prefix %v, core %v)",
+			m.Duration, limit, m.PrefixDuration, m.CoreEnd-m.CoreStart)
+	}
+	return nil
 }
 
 // guarded widens a speech interval by the sample guard, clipping at the

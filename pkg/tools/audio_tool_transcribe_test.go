@@ -12,7 +12,12 @@ import (
 func withFakeEngine(t *testing.T, engine func(ctx context.Context, filePath, outputFormat string) (string, error)) {
 	t.Helper()
 	orig := AudioTranscribeEngine
-	AudioTranscribeEngine = engine
+	AudioTranscribeEngine = nil
+	if engine != nil {
+		AudioTranscribeEngine = func(ctx context.Context, call AudioTranscribeCall) (string, error) {
+			return engine(ctx, call.FilePath, call.OutputFormat)
+		}
+	}
 	t.Cleanup(func() { AudioTranscribeEngine = orig })
 }
 

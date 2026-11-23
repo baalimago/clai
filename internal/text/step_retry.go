@@ -2,89 +2,36 @@ package text
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"strings"
 	"time"
 
-	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/runenv"
-	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
-
-// ErrStepRetryWithoutWait means a StepRetry has delays and nothing to wait them with.
-var ErrStepRetryWithoutWait = errors.New("step retry has delays but no wait")
-
-// StepRetry is the delays between requests of one model step. The zero value
-// makes one request.
-type StepRetry struct {
-	Delays []time.Duration
-	Wait   func(context.Context, time.Duration) error
-}
-
-// DefaultStepRetry is the schedule the CLI runs with.
-func DefaultStepRetry() StepRetry {
-	return StepRetry{
-		Delays: []time.Duration{time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
-		Wait:   waitForStepRetry,
-	}
-}
-
-func (r StepRetry) validate() error {
-	if len(r.Delays) > 0 && r.Wait == nil {
-		return ErrStepRetryWithoutWait
-	}
-	return nil
-}
-
-func waitForStepRetry(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
 
 // streamWithRetry resends a request that failed before its stream opened. No
 // step state exists yet, so the conversation continues where it is.
 func (q *Querier[C]) streamWithRetry(ctx context.Context, session *QuerySession, chat pub_models.Chat) (chan models.CompletionEvent, error) {
-	for try := 0; ; try++ {
+	return resend.Do(ctx, q.stepRetry, resend.Unanswered, q.noticeStepRetry, func(ctx context.Context) (chan models.CompletionEvent, error) {
 		session.requestStartedAt = time.Now()
-		completions, err := q.Model.StreamCompletions(ctx, chat)
-		if err == nil || ctx.Err() != nil || try >= len(q.stepRetry.Delays) || !stepRetryable(err) {
-			return completions, err
-		}
-		delay := q.stepRetry.Delays[try]
-		q.noticeStepRetry(err, try+1, delay)
-		if waitErr := q.stepRetry.Wait(ctx, delay); waitErr != nil {
-			return nil, diag.Errorf("retry wait after %v: %w", err, waitErr)
-		}
-	}
-}
-
-func stepRetryable(err error) bool {
-	return errors.Is(err, claierr.ErrProviderUnavailable) || errors.Is(err, claierr.ErrTransport)
+		return q.Model.StreamCompletions(ctx, chat)
+	})
 }
 
 // noticeStepRetry is best effort: failing to report a retry must not cost it.
-func (q *Querier[C]) noticeStepRetry(cause error, attempt int, delay time.Duration) {
-	title := fmt.Sprintf("retry %d/%d in %v", attempt, len(q.stepRetry.Delays), delay)
-	model, reason := q.routeModel(), stepRetryReason(cause)
+func (q *Querier[C]) noticeStepRetry(t resend.Try) {
+	title, model, reason := t.String(), q.routeModel(), resend.Reason(t.Cause)
 	if q.json.active() {
 		_ = q.json.stderr.ReportProgress(display.Progress{
 			Title:  "retry",
 			Row:    model,
 			State:  "update",
-			Detail: fmt.Sprintf("attempt %d/%d in %v: %s", attempt, len(q.stepRetry.Delays), delay, reason),
+			Detail: fmt.Sprintf("attempt %d/%d in %v: %s", t.Attempt, t.Of, t.Delay, reason),
 		})
 		return
 	}
@@ -97,20 +44,4 @@ func (q *Querier[C]) noticeStepRetry(cause error, attempt int, delay time.Durati
 		w = q.errOut
 	}
 	_, _ = fmt.Fprintln(w, look.For(w).Head(title, model, reason))
-}
-
-func stepRetryReason(cause error) string {
-	if unavailable, ok := errors.AsType[*claierr.ProviderUnavailableError](cause); ok {
-		return fmt.Sprintf("provider unavailable (%d)", unavailable.StatusCode)
-	}
-	var transport *claierr.TransportError
-	if !errors.As(cause, &transport) || transport.Cause == nil {
-		return "connection failed"
-	}
-	detail := transport.Cause
-	// A request URL can carry a vendor's API key.
-	if request, ok := errors.AsType[*url.Error](detail); ok {
-		detail = request.Err
-	}
-	return "connection failed: " + strings.Join(strings.Fields(detail.Error()), " ")
 }

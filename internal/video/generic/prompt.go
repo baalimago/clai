@@ -55,7 +55,8 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 	}
 	prompt := collected.Prompt
 
-	runenv.Debugf(ctx, runenv.SubsystemVideo, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
+	runenv.Debugf(ctx, runenv.SubsystemVideo, "prompt: bytes=%d", len(prompt))
+	runenv.Tracef(ctx, runenv.SubsystemVideo, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
 
 	switch len(collected.Images) {
 	case 0:

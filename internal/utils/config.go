@@ -288,7 +288,7 @@ func loadConfigFromFile[T any](
 
 		conf, err := decodeConfigWithDefaults(fileBytes, configFileName, dflt)
 		if err == nil {
-			runenv.Debugf(ctx, runenv.SubsystemConfig, "found config (read-only): %v", debug.IndentedJsonFmt(conf))
+			runenv.Tracef(ctx, runenv.SubsystemConfig, "found config (read-only): %v", debug.IndentedJsonFmt(conf))
 		}
 		return conf, nil, err
 	}
@@ -358,7 +358,7 @@ func loadConfigFromFile[T any](
 			runenv.Noticef(ctx, runenv.SubsystemConfig, "%s", ConfigUpgradeMessage(configFileName, added))
 		}
 	}
-	runenv.Debugf(ctx, runenv.SubsystemConfig, "found config: %v", debug.IndentedJsonFmt(conf))
+	runenv.Tracef(ctx, runenv.SubsystemConfig, "found config: %v", debug.IndentedJsonFmt(conf))
 	return conf, added, nil
 }
 

@@ -295,13 +295,16 @@ func TestSplitter_ChunkFailureCancelsSiblings(t *testing.T) {
 }
 
 func TestSplitter_DiarizeRoutesToCalibration(t *testing.T) {
+	t.Parallel()
 	// Oversized diarized files no longer take the plain split path
 	p := &voiceProvider{truth: smallMeeting()}
-	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("gpt-4o-transcribe-diarize"))
+	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
+	conf.Transcribe.MaxRequestSeconds = 200
+	s, status, input := newCalibratedSplitter(t, p, conf)
 	if _, err := s.Transcribe(context.Background(), input); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(status.String(), "▸ calibrated diarization") || strings.Contains(status.String(), "labels may drift") {
+	if !strings.Contains(status.String(), "▸ speaker labelling") || strings.Contains(status.String(), "labels may drift") {
 		t.Errorf("expected the calibration path, got:\n%v", status.String())
 	}
 	if p.requests() == 0 {

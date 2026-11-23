@@ -25,7 +25,7 @@ type Transcriber struct {
 }
 
 func (t *Transcriber) Setup() error {
-	err := t.Transcriber.Setup("OPENROUTER_API_KEY", TranscribeURL, "DEBUG_OPENROUTER")
+	err := t.Transcriber.Setup("OPENROUTER_API_KEY", TranscribeURL)
 	if err != nil {
 		return diag.Errorf("failed to setup transcriber: %w", err)
 	}
@@ -37,6 +37,7 @@ func (t *Transcriber) Setup() error {
 		return fmt.Errorf("openrouter transcribe model %q: %v must end the name, as in or:<slug>[:variant]%v", t.Model, DiarizeSuffix, DiarizeSuffix)
 	}
 	t.Transcriber.Model = slug
+	t.Transcriber.DecodeError = decodeError
 	t.Transcriber.Format = generic.ResponseFormatVerboseJSON
 	t.Transcriber.ExtraHeaders = map[string]string{
 		"HTTP-Referer":       "clai",

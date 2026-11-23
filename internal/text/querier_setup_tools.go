@@ -220,7 +220,10 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	explicitTail := len(mcpServers)
 	mcpServers = append(mcpServers, validExplicit...)
 
-	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "mcpServers: %v", debug.IndentedJsonFmt(redactMcpServersForDebug(mcpServers)))
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "mcpServers: count=%d", len(mcpServers))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemTextQuerier) {
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "mcpServers: %v", debug.IndentedJsonFmt(redactMcpServersForDebug(mcpServers)))
+	}
 	// A per-file parse or validation failure must never be silently dropped
 	// just because some other file in the same directory parsed (D44,
 	// R2-06): before this, the joined error from findConfiguredMcpServers
@@ -669,7 +672,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 
 	toAdd = uniqueTools(toAdd)
 	for _, tool := range toAdd {
-		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description)
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description)
 		registerTool(toolBox, userConf, tool)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}

@@ -1,0 +1,59 @@
+# clai audio transcribe -am test-diarize -af json -voices Lorentz,Ada meeting.wav
+# env: -
+== status
+0
+== stdout
+{
+  "segments": [
+    {
+      "start": 0,
+      "end": 8,
+      "speaker": "Lorentz",
+      "voice": {
+        "clip": "lorentz/f8d05534bcf9",
+        "status": "confirmed"
+      },
+      "text": "hello there"
+    },
+    {
+      "start": 9,
+      "end": 15,
+      "speaker": "B",
+      "text": "hi"
+    }
+  ],
+  "naming": {
+    "status": "named",
+    "origin": "flag",
+    "speakers": [
+      {
+        "label": "A",
+        "name": "Lorentz",
+        "voice": {
+          "clip": "lorentz/f8d05534bcf9",
+          "status": "confirmed"
+        }
+      },
+      {
+        "label": "B",
+        "reason": "no-match"
+      }
+    ],
+    "voices": [
+      {
+        "name": "Lorentz",
+        "result": "named"
+      },
+      {
+        "name": "Ada",
+        "result": "unknown-voice"
+      }
+    ]
+  }
+}
+
+== stderr
+transcribing meeting.wav · 1 request · 0.0 MB
+transcribed · 2 segments
+warn [audio] no voice "Ada" in the library
+

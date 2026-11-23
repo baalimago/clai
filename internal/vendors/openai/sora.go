@@ -95,10 +95,11 @@ func NewVideoQuerier(ctx context.Context, vConf video.Configurations) (models.Qu
 }
 
 func (q *Sora) createRequest(ctx context.Context) (*http.Request, error) {
-	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorOpenAI) {
+	runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "sora request model=%s prompt_bytes=%d", q.Model, len(q.Prompt))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemVendorOpenAI) {
 		tmp := *q
 		tmp.apiKey = q.apiKey[:min(5, len(q.apiKey))] + "..."
-		runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "Sora request: %+v", tmp)
+		runenv.Tracef(ctx, runenv.SubsystemVendorOpenAI, "Sora request: %+v", tmp)
 	}
 
 	// The working curl uses multipart/form-data directly to /v1/videos.

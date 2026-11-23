@@ -111,8 +111,8 @@ func TestParseStreamLineDebug(t *testing.T) {
 	if err != nil || !ok || evt.Type != "response.created" {
 		t.Fatalf("parseStreamLine = %#v, %v, %v", evt, ok, err)
 	}
-	if !strings.Contains(diagnostics.String(), "got: 'data: ") {
-		t.Fatalf("debug diagnostics = %q, want the line traced", diagnostics.String())
+	if got := diagnostics.String(); got != "" {
+		t.Fatalf("debug diagnostics = %q, want none per event", got)
 	}
 }
 
@@ -392,7 +392,7 @@ func TestCreateRequestDebug(t *testing.T) {
 	if req == nil {
 		t.Fatal("createRequest returned no request")
 	}
-	for _, want := range []string{"openai responses request (tools redacted):", "https://example.com", `"model": "gpt-5"`} {
+	for _, want := range []string{"openai responses request url=https://example.com model=gpt-5 input_items=0 tools=0 bytes="} {
 		if !strings.Contains(output, want) {
 			t.Errorf("debug output does not contain %q: %s", want, output)
 		}

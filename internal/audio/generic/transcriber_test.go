@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 func writeTestAudioFile(t *testing.T, content []byte) string {
@@ -35,7 +37,7 @@ func setupTranscriber(t *testing.T, model, url string) *Transcriber {
 	t.Helper()
 	t.Setenv("TEST_AUDIO_API_KEY", "test-key")
 	trans := &Transcriber{Model: model}
-	if err := trans.Setup("TEST_AUDIO_API_KEY", url, "DEBUG_TEST_AUDIO"); err != nil {
+	if err := trans.Setup("TEST_AUDIO_API_KEY", url); err != nil {
 		t.Fatalf("failed to setup transcriber: %v", err)
 	}
 	return trans
@@ -44,7 +46,7 @@ func setupTranscriber(t *testing.T, model, url string) *Transcriber {
 func TestSetup_MissingAPIKey(t *testing.T) {
 	t.Setenv("TEST_AUDIO_API_KEY", "")
 	trans := &Transcriber{}
-	err := trans.Setup("TEST_AUDIO_API_KEY", "http://localhost", "DEBUG_TEST_AUDIO")
+	err := trans.Setup("TEST_AUDIO_API_KEY", "http://localhost")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -345,5 +347,62 @@ func TestTranscribe_ContextCancelled(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("expected prompt abort, took: %v", elapsed)
+	}
+}
+
+func TestTranscribe_FailureCarriesItsMeaning(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		retryAfter string
+		want       error
+		wantAfter  time.Duration
+	}{
+		{name: "rate limited", status: http.StatusTooManyRequests, retryAfter: "7", want: claierr.ErrRateLimited, wantAfter: 7 * time.Second},
+		{name: "provider failure", status: http.StatusBadGateway, want: claierr.ErrProviderUnavailable},
+		{name: "rejected key", status: http.StatusUnauthorized, want: claierr.ErrAuthFailed},
+		{name: "rejected request", status: http.StatusBadRequest, want: claierr.ErrUnexpectedProviderResponse},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.retryAfter != "" {
+					w.Header().Set("Retry-After", tc.retryAfter)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer server.Close()
+			_, err := setupTranscriber(t, "whisper-1", server.URL).Transcribe(context.Background(), writeTestAudioFile(t, []byte("x")))
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			var facts claierr.APIErrorer
+			if !errors.As(err, &facts) || facts.API().RetryAfter != tc.wantAfter {
+				t.Fatalf("Retry-After of %v is not %v", err, tc.wantAfter)
+			}
+		})
+	}
+}
+
+func TestTranscribe_VendorDecoderSpeaksFirst(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	trans := setupTranscriber(t, "whisper-1", server.URL)
+	trans.DecodeError = func(status int, _ []byte) error {
+		return claierr.NewInsufficientCredits(&claierr.APIError{StatusCode: status})
+	}
+	if _, err := trans.Transcribe(context.Background(), writeTestAudioFile(t, []byte("x"))); !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+		t.Fatalf("err = %v, want the decoder's meaning", err)
+	}
+}
+
+func TestTranscribe_NoAnswerIsATransportFailure(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	_, err := setupTranscriber(t, "whisper-1", server.URL).Transcribe(context.Background(), writeTestAudioFile(t, []byte("x")))
+	if !errors.Is(err, claierr.ErrTransport) {
+		t.Fatalf("err = %v, want ErrTransport", err)
 	}
 }

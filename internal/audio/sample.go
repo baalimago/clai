@@ -14,12 +14,9 @@ const (
 	materialMinSpeech   = 3 * time.Second
 	materialMinFraction = 0.01
 
-	reasonNonMaterial      = "non-material"
-	reasonNoSample         = "no-sample"
-	reasonNoClip           = "no-clip"
-	reasonReserveExhausted = "prefix-reserve-exhausted"
-	reasonFrozen           = "frozen"
-	reasonStale            = "stale-sample-version"
+	reasonNonMaterial = "non-material"
+	reasonNoSample    = "no-sample"
+	reasonNoRun       = "no-run-of-sample-length"
 )
 
 // LabelStat is one local label's speech in a chunk and whether it may
@@ -128,12 +125,4 @@ func (SampleExtractor) Candidates(segs []Segment, label string) []Candidate {
 		return cands[i].Clearance > cands[j].Clearance
 	})
 	return cands
-}
-
-// better reports whether a beats b as a sample: more speech, then clearance.
-func better(a, b Candidate) bool {
-	if a.Speech != b.Speech {
-		return a.Speech > b.Speech
-	}
-	return a.Clearance > b.Clearance
 }

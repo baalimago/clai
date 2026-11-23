@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/runenv"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -109,7 +110,7 @@ type Configurations struct {
 	CostWarnf func(format string, a ...any) `json:"-"`
 	// StepRetry resends a model request that failed before its stream opened.
 	// The zero value makes one request: the summarizer has its own model ladder.
-	StepRetry StepRetry `json:"-"`
+	StepRetry resend.Schedule `json:"-"`
 	// ErrOut replaces the process stderr for the querier's MCP log sink; nil
 	// keeps os.Stderr. A querier that may outlive its caller (the abandoned
 	// in-flight summarizer) must never read the global stream (R2-09).
@@ -366,7 +367,7 @@ func (c *Configurations) setupSystemPrompt() {
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) error {
-	traceChatf(ctx, "setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
+	traceChatf(ctx, "setup initial chat start reply_mode=%t glob=%q args=%d", c.ReplyMode, c.Glob, len(args))
 	if c.Glob != "" && c.ReplyMode {
 		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
@@ -381,7 +382,8 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 	if c.Glob != "" {
 		traceChatf(ctx, "setup initial chat creating glob chat glob=%q", c.Glob)
 		globChat := glob.FramedChat(c.Glob, collected.GlobMessages)
-		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "glob messages: %v", globChat.Messages)
+		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "glob messages: count=%d", len(globChat.Messages))
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "glob messages: %v", globChat.Messages)
 		c.InitialChat = globChat
 		traceChatf(ctx, "setup initial chat glob chat loaded messages=%d", len(c.InitialChat.Messages))
 	}
@@ -422,7 +424,10 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 	c.InitialChat.Messages = append(c.InitialChat.Messages, userPromptMessage(prompt, collected.Images))
 	traceChatf(ctx, "setup initial chat appended prompt total_messages=%d", len(c.InitialChat.Messages))
 
-	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat))
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "InitialPrompt: messages=%d prompt_bytes=%d", len(c.InitialChat.Messages), len(prompt))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemTextQuerier) {
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat))
+	}
 	c.PostProccessedPrompt = prompt
 	if c.InitialChat.ID == "" {
 		chatID, err := chatid.New()

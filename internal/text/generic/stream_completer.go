@@ -105,10 +105,11 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		reqData.Tools = s.tools
 		reqData.ToolChoice = s.ToolChoice
 	}
-	if s.debugging() {
+	s.debugf("generic streamcompleter request url=%v model=%v messages=%d tools=%d", s.URL, reqData.Model, len(reqData.Messages), len(reqData.Tools))
+	if runenv.TraceEnabled(s.diagContext(), s.subsystem) {
 		noTools := reqData
 		noTools.Tools = make([]ToolSuper, 0)
-		s.debugf("generic streamcompleter request (tools redacted):\nurl: %v\nstruct: %v", s.URL, debug.IndentedJsonFmt(noTools))
+		s.tracef("generic streamcompleter request (tools redacted):\nurl: %v\nstruct: %v", s.URL, debug.IndentedJsonFmt(noTools))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
@@ -132,10 +133,12 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 
 func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Response) (chan models.CompletionEvent, error) {
 	outChan := make(chan models.CompletionEvent)
-	s.stream = streamState{}
+	summary := NewStreamSummary()
+	s.stream = streamState{summary: summary}
 	go func() {
-		br := bufio.NewReader(res.Body)
+		br := bufio.NewReader(summary.Body(res.Body))
 		defer func() {
+			summary.Record(func(line string) { s.debugf("%s", line) })
 			res.Body.Close()
 			close(outChan)
 		}()
@@ -165,7 +168,6 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 				}
 				return
 			}
-			s.debugf("received data from model, len: '%v', content: '%s'", len(token), token)
 			if len(token) > 0 && s.forwardChunk(ctx, outChan, token) == streamEnded {
 				return
 			}
@@ -207,6 +209,10 @@ func (s *StreamCompleter) forwardChunk(ctx context.Context, out chan<- models.Co
 		case pub_models.Call, models.ReasoningEvent, models.ImageEvent:
 			s.stream.produced = true
 		}
+		switch evt.(type) {
+		case models.StopEvent, error:
+			s.recordSummary()
+		}
 		select {
 		case out <- evt:
 		case <-ctx.Done():
@@ -230,6 +236,13 @@ func (s *StreamCompleter) forwardChunk(ctx context.Context, out chan<- models.Co
 		}
 	}
 	return streamContinues
+}
+
+func (s *StreamCompleter) recordSummary() {
+	if s.usage != nil {
+		s.stream.summary.Tokens(s.usage.PromptTokens, s.usage.CompletionTokens)
+	}
+	s.stream.summary.Record(func(line string) { s.debugf("%s", line) })
 }
 
 func (s *StreamCompleter) vendorEvents(token []byte) ([]models.CompletionEvent, error) {
@@ -274,7 +287,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		return models.NoopEvent{}
 	}
 
-	s.debugf("token: %+v\n", string(token))
+	s.tracef("token: %+v\n", string(token))
 	var chunk chatCompletionChunk
 	err := json.Unmarshal(token, &chunk)
 	if err != nil {
@@ -284,7 +297,8 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		if isData && s.stream.malformed == nil {
 			s.stream.malformed = bytes.Clone(token)
 		}
-		runenv.Debugf(s.diagContext(), runenv.SubsystemChat, "failed to unmarshal token: %s, err: %v", token, err)
+		runenv.Debugf(s.diagContext(), runenv.SubsystemChat, "failed to unmarshal token of %d bytes", len(token))
+		runenv.Tracef(s.diagContext(), runenv.SubsystemChat, "failed to unmarshal token: %s, err: %v", token, err)
 		return models.NoopEvent{}
 	}
 	s.stream.sawData = s.stream.sawData || isData
@@ -325,7 +339,8 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		}
 	}
 
-	s.debugf("chosen: %T -  %+v\n", chosen, chosen)
+	s.stream.summary.Event(fmt.Sprintf("%T", chosen))
+	s.tracef("chosen: %T -  %+v\n", chosen, chosen)
 
 	return chosen
 }
@@ -370,7 +385,8 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		// The arguments is streamed as a stringified json for chatgpt, chunk by chunk, with no apparent structure
 		s.toolsCallArgsString += argChunk
 
-		s.debugf("toolsCallArgsString: %v\n", s.toolsCallArgsString)
+		s.debugf("tool call arguments bytes=%d", len(s.toolsCallArgsString))
+		s.tracef("toolsCallArgsString: %v\n", s.toolsCallArgsString)
 		var input pub_models.Input
 		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 		if err == nil {
@@ -483,9 +499,9 @@ func (s *StreamCompleter) diagSubsystem() string {
 	return s.subsystem
 }
 
-// debugging reports whether the vendor's debug detail is shown.
-func (s *StreamCompleter) debugging() bool {
-	return runenv.DebugEnabled(s.diagContext(), s.subsystem)
+// tracef reports payload detail: anything that carries conversation content.
+func (s *StreamCompleter) tracef(format string, args ...any) {
+	runenv.Tracef(s.diagContext(), s.subsystem, format, args...)
 }
 
 // debugf reports debug detail of the vendor this completer streams for.

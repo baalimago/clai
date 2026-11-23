@@ -191,11 +191,11 @@ func loadConfig(ctx context.Context, deps CommandDeps, f *Flags, confDir string)
 	if err != nil {
 		return Configurations{}, diag.Errorf("failed to load configs: %w", err)
 	}
-	runenv.Debugf(ctx, runenv.SubsystemPhoto, "photoConfig pre override: %+v", pConf)
+	runenv.Tracef(ctx, runenv.SubsystemPhoto, "photoConfig pre override: %+v", pConf)
 	if err := ApplyFlagOverrides(&pConf, f); err != nil {
 		return Configurations{}, err
 	}
-	runenv.Debugf(ctx, runenv.SubsystemPhoto, "photoConfig post override: %+v", pConf)
+	runenv.Tracef(ctx, runenv.SubsystemPhoto, "photoConfig post override: %+v", pConf)
 	if pConf.Output.Type == URL {
 		return Configurations{}, &URLOutputRemovedError{}
 	}

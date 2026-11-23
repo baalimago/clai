@@ -14,6 +14,8 @@ const (
 	KindWarning Kind = "warning"
 	KindNotice  Kind = "notice"
 	KindDebug   Kind = "debug"
+	// KindTrace is payload detail, such as a response body.
+	KindTrace Kind = "trace"
 )
 
 // Subsystem names. The legacy ones are the lower-cased DEBUG_<SUBSYSTEM>
@@ -123,7 +125,7 @@ func TypeName(subsystem string, kind Kind) string {
 	return subsystem + "." + string(kind)
 }
 
-// Types is the CLI's diagnostic type registry: the four generic kinds of
+// Types is the CLI's diagnostic type registry: the generic kinds of
 // every subsystem plus the named types. Tool-call debug detail is buffered:
 // it is high-volume and would interleave with the streamed reply (F4).
 func Types() []diagnostic.Type {
@@ -132,11 +134,12 @@ func Types() []diagnostic.Type {
 		KindWarning: diagnostic.LevelWarn,
 		KindNotice:  diagnostic.LevelInfo,
 		KindDebug:   diagnostic.LevelDebug,
+		KindTrace:   diagnostic.LevelTrace,
 	}
 	var types []diagnostic.Type
 	for _, registered := range Subsystems() {
 		subsystem := registered.Name
-		for _, kind := range []Kind{KindError, KindWarning, KindNotice, KindDebug} {
+		for _, kind := range []Kind{KindError, KindWarning, KindNotice, KindDebug, KindTrace} {
 			mode := diagnostic.Immediate
 			if subsystem == SubsystemCall && kind == KindDebug {
 				mode = diagnostic.Buffered

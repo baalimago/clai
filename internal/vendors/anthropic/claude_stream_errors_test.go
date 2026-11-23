@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
 
 	"github.com/baalimago/clai/internal/models"
@@ -114,7 +115,7 @@ func TestClaudeHandleTokenErrors(t *testing.T) {
 }
 
 func TestClaudeHandleTokenDebugAndNoop(t *testing.T) {
-	c := &Claude{}
+	c := &Claude{summary: generic.NewStreamSummary()}
 	var diagnostics bytes.Buffer
 	ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
 	got := c.handleToken(ctx, bufio.NewReader(strings.NewReader("\n")), "event: ping")
@@ -124,8 +125,8 @@ func TestClaudeHandleTokenDebugAndNoop(t *testing.T) {
 	if got := c.handleToken(ctx, bufio.NewReader(strings.NewReader("\n")), "event: message_stop"); !errors.Is(got.(error), io.EOF) {
 		t.Fatalf("handleToken(event: message_stop) = %#v, want io.EOF", got)
 	}
-	if !strings.Contains(diagnostics.String(), "eventType: 'ping'") {
-		t.Fatalf("debug diagnostics = %q, want the ping event traced", diagnostics.String())
+	if diagnostics.Len() != 0 || !strings.Contains(c.summary.String(), "events=2 bytes=0 tokens_in=0 tokens_out=0 took=0.0s types=message_stop:1,ping:1") {
+		t.Fatalf("debug diagnostics = %q, summary = %q, want the events counted and nothing per event", diagnostics.String(), c.summary)
 	}
 }
 

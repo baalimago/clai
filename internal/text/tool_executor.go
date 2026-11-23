@@ -55,7 +55,10 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	planned := make([]pub_models.Call, 0, len(calls))
 	for _, call := range calls {
 		if runenv.DebugEnabled(ctx, runenv.SubsystemCall) {
-			runenv.Debugf(ctx, runenv.SubsystemCall, "received tool call: %v", debug.IndentedJsonFmt(call))
+			runenv.Debugf(ctx, runenv.SubsystemCall, "call %s", tools.CallSummary(call))
+		}
+		if runenv.TraceEnabled(ctx, runenv.SubsystemCall) {
+			runenv.Tracef(ctx, runenv.SubsystemCall, "received tool call: %v", debug.IndentedJsonFmt(call))
 		}
 		decision := q.decideToolCall(session, call)
 		if decision.TreatAsReturnToUser || decision.SkipExecution {

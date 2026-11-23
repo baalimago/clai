@@ -140,14 +140,15 @@ capture them — there is no central flag bag. Groups compose per command:
 | raw | `-r/-raw` | query (plain and loop mode), chat (+ subs except help), photo, video, audio, replay, dre |
 | reply/stdin | `-re/-reply`, `-I/-replace`, `-i` | query (plain and loop mode), photo, video |
 | agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query (plain and loop mode) |
-| media tools | `-am`, `-af`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-pm` is the model behind `generate_image`) | query (plain and loop mode) |
+| media tools | `-am`, `-af`, `-voices`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-voices` names the people `audio_transcribe` names, `-pm` is the model behind `generate_image`) | query (plain and loop mode), chat continue |
 | chat | `-r`, `-n`, `-p` (+ long forms) | chat (+ subs) |
 | query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-qs`, `-img`, `-open` (+ long forms) | query (plain and loop mode) |
 | loop | `-l/-loop` mode switch; `-mi/-max-iterations` iteration bound and `-check` verification gate (both require `-l`) | query |
 | summarize | positional `<window>`; `-force`, `-y`, `-workers`, `-sm` (+ long forms) — `SummarizeFlags`, registered on the sub only | chat **summarize** (sub-level) |
 | photo | `-pm`, `-pd`, `-pp`, `-img`, `-open` (+ long forms) | photo |
 | video | `-vm`, `-vd`, `-vp`, `-img` (+ long forms) | video |
-| audio | `-am`, `-af`, `-parallelism` (+ `-r`) | audio **transcribe** (sub-level) |
+| audio | `-am`, `-af`, `-voices`, `-parallelism` (+ `-r`) | audio **transcribe** (sub-level) |
+| voices | `add`: `-from`, `-to`, `-name`; `list`: `-json` — read among and after the positionals by the verbs themselves | audio voices **add**, **list** (sub-level) |
 | non-interactive | `-n/-non-interactive` | setup, tools, profiles, chat (+ subs), query (in agent text) |
 
 Each nesting level is an independent flag namespace, but **placement is a
@@ -226,8 +227,20 @@ hint lists every owner. On one path the shallowest owner takes the flag.
   dedicated setup (`summarizeSetup`) that parses the positional window and builds the
   injected summarizer; no other verb touches a model. Unmatched
   positionals stay with the parent and reach `chat.New` unchanged.
-- `audio` → `transcribe|t`, `help|h`; the parent errors with the namespace
-  help when the verb is missing or unknown.
+- `audio` → `transcribe|t`, `voices|v` (→ `add|a`, `list|l`),
+  `calibrate|c`, `help|h`; the parent errors with the namespace help when
+  the verb is missing or unknown. `transcribe` takes a file and nothing
+  else (`-` reads stdin): `clai audio transcribe voices` transcribes a file
+  named `voices`. With no file it prints its help, the text of
+  `clai audio transcribe -h`, and the missing-file error on stderr and exits
+  1. `voices` is the voice library's command (`voicescmd.Command`, see
+  [audio.md](./audio.md#known-voices)); with no verb, or an unknown one, it
+  prints its synopsis and exits 2. A `-json` written after the `voices`
+  verb, and `add`'s `-from`/`-to`/`-name` after `<wav>`, are read by the
+  verbs themselves, so no misplaced-flag hint is printed for them. A
+  `-from`, `-to` or `-name` before the file on `audio transcribe` is not a
+  transcribe flag: it fails with `failed to parse flagset: flag provided
+  but not defined: <flag>` and a hint naming `audio voices add`.
 - `tools` → `list`; the parent defaults to listing and treats a positional
   as a tool-detail lookup.
 - `profiles` is hidden; bare `profiles` rebuilds `config list profile`, and

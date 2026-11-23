@@ -5,11 +5,8 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 	"time"
-
-	"github.com/baalimago/clai/internal/board"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -92,38 +89,6 @@ func assertSixStableIDs(t *testing.T, segs []Segment, truth []voiceSpan) map[str
 	return got
 }
 
-func TestLateSpeakerDoesNotInvalidateChunks(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting()}
-	c, asm, _ := newCoordinator(p)
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err != nil {
-		t.Fatalf("run failed: %v", err)
-	}
-	ids := assertSixStableIDs(t, segs, p.truth)
-	if !strings.HasPrefix(ids["v6"], "speaker-") {
-		t.Errorf("late speaker should get a global ID, got %v", ids["v6"])
-	}
-	// bootstrap 2 + chunk2 (pass + discovery) 2 + chunk3 2 + chunk4 2 = 8, no chunk transcribed again
-	if p.requests() != 8 {
-		t.Errorf("expected 8 requests, got %v", p.requests())
-	}
-	coresSeen := map[SourceInterval]int{}
-	for _, call := range p.calls {
-		coresSeen[call.Core]++
-	}
-	for _, core := range cores4() {
-		if coresSeen[core] > 2 {
-			t.Errorf("core %v transcribed %v times; accepted chunks must not be redone", core, coresSeen[core])
-		}
-	}
-	if !asm.closed {
-		t.Error("assembler must be closed after the run")
-	}
-	if tot := c.Totals(); tot.Requests != 8 || tot.Retries != 0 || tot.Cores != 4 {
-		t.Errorf("unexpected totals %+v", tot)
-	}
-}
-
 func TestStitchRemovesPrefix(t *testing.T) {
 	p := &voiceProvider{truth: sixVoiceMeeting()}
 	c, _, _ := newCoordinator(p)
@@ -176,276 +141,12 @@ func TestStitchRestoresSourceTimestamps(t *testing.T) {
 	}
 }
 
-func TestFrozenSnapshotAllowsBoundedParallelism(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting(), delay: 20 * time.Millisecond}
-	c, _, _ := newCoordinator(p)
-	c.Parallelism = 2
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertSixStableIDs(t, segs, p.truth)
-	if p.maxInFlight != 2 {
-		t.Errorf("expected exactly 2 concurrent requests at peak, got %v", p.maxInFlight)
-	}
-}
-
 // plainStatus disables ancli colors so board rows are matched literally.
 func plainStatus(t *testing.T) {
 	t.Helper()
 	prev := ancli.UseColor
 	ancli.UseColor = false
 	t.Cleanup(func() { ancli.UseColor = prev })
-}
-
-func TestBestEffortRendersUnknown(t *testing.T) {
-	plainStatus(t)
-	p := &voiceProvider{truth: sixVoiceMeeting(), mixCandidateVoice: "v5"}
-	c, _, status := newCoordinator(p)
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err != nil {
-		t.Fatalf("best-effort must not fail: %v", err)
-	}
-	ids := idsByVoice(t, segs, p.truth)
-	if len(ids["v5"]) == 0 {
-		t.Fatal("v5 speech missing from output")
-	}
-	for id := range ids["v5"] {
-		if !strings.HasPrefix(id, "unknown-") {
-			t.Errorf("expected unknown-N for v5, got %v", id)
-		}
-	}
-	total := time.Duration(0)
-	for _, s := range segs {
-		total += s.End - s.Start
-	}
-	if total != 8*3*15*time.Second+8*2*15*time.Second+8*3*15*time.Second+8*3*15*time.Second {
-		t.Errorf("speech was dropped: %v", total)
-	}
-	out := status.String()
-	for _, want := range []string{"unknown speech kept as unknown-N", "unknown-1", "no-sample", "✗ 1 unresolved", "in 8 runs"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("expected stderr summary to contain %q, got:\n%v", want, out)
-		}
-	}
-	// v5 speaks in separate stretches interleaved with others: numbering is per contiguous run in source order
-	names := map[string]bool{}
-	for _, s := range segs {
-		if strings.HasPrefix(s.Speaker, "unknown-") {
-			names[s.Speaker] = true
-		}
-	}
-	if len(names) != 8 {
-		t.Errorf("expected 8 unknown runs (one per v5 turn), got %v", len(names))
-	}
-}
-
-func TestStrictFailsWithDiagnostics(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting(), mixCandidateVoice: "v5"}
-	c, asm, status := newCoordinator(p)
-	c.Strict = true
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err == nil || segs != nil {
-		t.Fatalf("expected strict failure with no transcript, got %v segments, err %v", len(segs), err)
-	}
-	var ue *UnresolvedError
-	if !errors.As(err, &ue) {
-		t.Fatalf("expected UnresolvedError, got %T: %v", err, err)
-	}
-	if ue.Chunk != 2 || ue.Interval.Start != 900*time.Second || ue.Attempts != discoveryIterations || ue.Requests != 3 {
-		t.Errorf("unexpected diagnostics: %+v", ue)
-	}
-	for _, want := range []string{"chunk 3", "15m0s", "attempts", reasonMixed, "strict-speakers"} {
-		if !strings.Contains(err.Error(), want) && !strings.Contains(status.String(), want) {
-			t.Errorf("expected diagnostics to mention %q, got: %v", want, err)
-		}
-	}
-	if !asm.closed {
-		t.Error("artifacts must be removed on strict failure")
-	}
-}
-
-func TestStrictSpeakersDefaultsToBestEffort(t *testing.T) {
-	if (TranscribeConfig{}).StrictSpeakers || Default.Transcribe.StrictSpeakers {
-		t.Fatal("strict-speakers zero value must be best-effort")
-	}
-	p := &voiceProvider{truth: sixVoiceMeeting(), mixCandidateVoice: "v5"}
-	c, _, _ := newCoordinator(p)
-	if _, err := c.Run(context.Background(), "meeting.wav"); err != nil {
-		t.Errorf("zero-value Strict must render unknowns instead of failing: %v", err)
-	}
-}
-
-func TestRequestAccountingCountsRetries(t *testing.T) {
-	// Request 3 is chunk 2's first pass: speaker-2's sample comes back mixed
-	p := &voiceProvider{truth: sixVoiceMeeting(), mixSample: map[int]string{3: "speaker-1"}}
-	c, _, _ := newCoordinator(p)
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertSixStableIDs(t, segs, p.truth)
-	tot := c.Totals()
-	// bootstrap 2 (both counted) + chunk 2: pass, recovery retry, discovery 3 + chunk 3: 2 + chunk 4: 2 = 9
-	if tot.Requests != 9 || tot.Retries != 1 || tot.CacheHits != 0 {
-		t.Errorf("unexpected totals %+v (calls %v)", tot, len(p.calls))
-	}
-	if p.requests() != tot.Requests {
-		t.Errorf("provider saw %v requests, totals say %v", p.requests(), tot.Requests)
-	}
-	uploaded := time.Duration(0)
-	for _, call := range p.calls {
-		uploaded += manifestFor(call.Samples, call.Core).Duration
-	}
-	if tot.Uploaded != uploaded {
-		t.Errorf("uploaded seconds %v, expected %v", tot.Uploaded, uploaded)
-	}
-}
-
-func TestSecondSampleFailureDoesNotRetry(t *testing.T) {
-	// Chunk 2 (requests 3 and 4): speaker-1's sample fails in the pass and again in the retry
-	p := &voiceProvider{truth: sixVoiceMeeting(), mixSample: map[int]string{3: "speaker-1", 4: "speaker-1"}}
-	c, _, status := newCoordinator(p)
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// pass + one recovery retry, no discovery while the sample is still failing
-	chunk2 := 0
-	for _, call := range p.calls {
-		if call.Core.Start == 450*time.Second {
-			chunk2++
-		}
-	}
-	if chunk2 != 2 {
-		t.Errorf("expected exactly two requests for chunk 2 (pass + one recovery), got %v", chunk2)
-	}
-	if c.Totals().Retries != 1 || !strings.Contains(status.String(), "retries 1") || !strings.Contains(status.String(), "recovery retry") {
-		t.Errorf("expected exactly one retry counted and announced, got %+v", c.Totals())
-	}
-	ids := idsByVoice(t, segs, p.truth)
-	// v1's chunk-2 speech is unknown there, mapped to one speaker everywhere else; no duplicate identity
-	mapped := 0
-	for id := range ids["v1"] {
-		if !strings.HasPrefix(id, "unknown-") {
-			mapped++
-		}
-	}
-	if mapped != 1 {
-		t.Errorf("expected v1 mapped to exactly one global ID outside chunk 2, got %v", ids["v1"])
-	}
-	if n := len(d(t, c).Speakers); n != 5 {
-		t.Errorf("expected five speakers (v4 stays unknown in chunk 2, no duplicate v1), got %v", n)
-	}
-	if r := d(t, c).Speakers[0].Replacements; r != 1 {
-		t.Errorf("expected one replacement consumed, got %v", r)
-	}
-}
-
-func TestAmbiguityRetriesWithReversedPrefix(t *testing.T) {
-	t.Run("reversed order resolves without mutation", func(t *testing.T) {
-		// Request 3 (chunk 2 first pass) merges v1 and v2 onto one letter
-		p := &voiceProvider{truth: sixVoiceMeeting(), mergeVoices: map[int][2]string{3: {"v1", "v2"}}}
-		c, _, _ := newCoordinator(p)
-		segs, err := c.Run(context.Background(), "meeting.wav")
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertSixStableIDs(t, segs, p.truth)
-		first, retry := p.calls[2].Samples, p.calls[3].Samples
-		if len(first) != 3 || len(retry) != 3 || first[0].ID != retry[2].ID || first[2].ID != retry[0].ID {
-			t.Errorf("expected the retry to carry the reversed prefix, got %v then %v", first, retry)
-		}
-		for _, s := range retry {
-			if s.Candidate {
-				t.Errorf("recovery retry must carry no candidates: %+v", retry)
-			}
-		}
-		if tot := c.Totals(); tot.Retries != 1 || tot.Requests != 9 {
-			t.Errorf("unexpected totals %+v", tot)
-		}
-	})
-	t.Run("repeated ambiguity leaves both unmapped without a third request", func(t *testing.T) {
-		p := &voiceProvider{truth: sixVoiceMeeting(), mergeVoices: map[int][2]string{3: {"v1", "v2"}, 4: {"v1", "v2"}}}
-		c, _, _ := newCoordinator(p)
-		segs, err := c.Run(context.Background(), "meeting.wav")
-		if err != nil {
-			t.Fatal(err)
-		}
-		plain := 0
-		for _, call := range p.calls {
-			if call.Core.Start == 450*time.Second && len(sampleIDs(call.Samples)) == 0 {
-				plain++
-			}
-		}
-		if plain != 2 {
-			t.Errorf("expected pass and one reversed retry only, got %v plain requests for chunk 2", plain)
-		}
-		// Discovery may still anchor the voices in a later request; they must never merge
-		ids := idsByVoice(t, segs, p.truth)
-		for id := range ids["v1"] {
-			if _, shared := ids["v2"][id]; shared && !strings.HasPrefix(id, "unknown-") {
-				t.Errorf("v1 and v2 merged onto %v", id)
-			}
-		}
-		if c.Totals().Retries != 1 {
-			t.Errorf("expected one retry, got %+v", c.Totals())
-		}
-	})
-}
-
-func TestBudgetStopsPerChunk(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting()}
-	c, asm, _ := newCoordinator(p)
-	c.MaxRequestsPerChunk = 1
-	_, err := c.Run(context.Background(), "meeting.wav")
-	var le *RequestLimitError
-	if !errors.As(err, &le) {
-		t.Fatalf("expected RequestLimitError, got %v", err)
-	}
-	if le.Chunk != 0 || le.Limit != 1 || le.Consumed != 1 || le.Interval.End != 450*time.Second || len(le.Unresolved) != 3 {
-		t.Errorf("unexpected diagnostics %+v", le)
-	}
-	if p.requests() != 1 {
-		t.Errorf("expected the second request refused before upload, got %v requests", p.requests())
-	}
-	if !asm.closed {
-		t.Error("artifacts must be removed")
-	}
-}
-
-func TestBudgetErrorsUnderBestEffort(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting()}
-	c, _, _ := newCoordinator(p)
-	c.Strict, c.MaxRequestsPerChunk = false, 1
-	segs, err := c.Run(context.Background(), "meeting.wav")
-	if !IsRequestLimit(err) || segs != nil {
-		t.Fatalf("limit exhaustion must error even in best-effort, got %v segments, err %v", len(segs), err)
-	}
-}
-
-func TestCoordinatorReportsTotalsOnStderr(t *testing.T) {
-	plainStatus(t)
-	p := &voiceProvider{truth: sixVoiceMeeting()}
-	c, _, status := newCoordinator(p)
-	if _, err := c.Run(context.Background(), "meeting.wav"); err != nil {
-		t.Fatal(err)
-	}
-	out := status.String()
-	for _, want := range []string{
-		"▸ calibrated diarization  meeting.wav  4 cores", "≤16 requests",
-		"uncalibrated pass · 7m30s", "discovery ·3", "mapping", "calibrated pass",
-		"✓ calibrated · 6 speakers", "4/4    22:30–30:00", "3/3", "2/4",
-		"requests 8/≤16", "retries 0", "cache hits 0", "uploaded", "speakers 6", "unknown 0s", "elapsed",
-		"phase  bootstrap · core 1 of 4", "phase  calibrating · cores 2–4 · 1 workers", "phase  stitching", "phase  done · ",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("expected %q in status output, got:\n%v", want, out)
-		}
-	}
-	if strings.Contains(out, "\x1b[") {
-		t.Errorf("non-terminal status must be plain rows, got:\n%q", out)
-	}
 }
 
 func TestCoordinatorPropagatesTranscriberError(t *testing.T) {
@@ -461,20 +162,17 @@ func TestCoordinatorPropagatesTranscriberError(t *testing.T) {
 }
 
 func TestCoordinatorCancelsAndCleansUp(t *testing.T) {
-	p := &voiceProvider{truth: sixVoiceMeeting(), hold: make(chan struct{})}
+	p := &voiceProvider{truth: sixVoiceMeeting(), hold: make(chan struct{}), held: make(chan struct{}, 1)}
 	c, asm, _ := newCoordinator(p)
-	c.Parallelism = 3
+	c.Parallelism = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		_, err := c.Run(ctx, "meeting.wav")
 		done <- err
 	}()
-	// wait for the bootstrap request to be in flight, then cancel
-	deadline := time.Now().Add(5 * time.Second)
-	for p.requests() == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	// cancel once the first survey is held in flight
+	<-p.held
 	cancel()
 	err := <-done
 	if !errors.Is(err, context.Canceled) {
@@ -494,72 +192,28 @@ func TestCoordinatorCancelsAndCleansUp(t *testing.T) {
 	}
 }
 
-// d returns the coordinator's final registry snapshot for assertions.
-func d(t *testing.T, c *Coordinator) Snapshot {
-	t.Helper()
-	if c.registry == nil {
-		t.Fatal("coordinator has no registry")
-	}
-	return c.registry.Snapshot()
-}
-
 // TestCoordinatorLiveBoardRendersEstimate drives the board in terminal mode
 // against a buffer: the footer function runs under the board lock at every
 // redraw, so any callback into the board would deadlock here.
 func TestCoordinatorLiveBoardRendersEstimate(t *testing.T) {
 	plainStatus(t)
-	p := &voiceProvider{truth: sixVoiceMeeting(), delay: 5 * time.Millisecond}
-	c, _, status := newCoordinator(p)
+	c, _, status := surveyFor(newChunkDiarizer(twoInChunkOne()))
 	c.forceLive = true
-	c.Parallelism = 2
-	done := make(chan error, 1)
-	go func() {
-		_, err := c.Run(context.Background(), "meeting.wav")
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("live board deadlocked")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := c.Run(ctx, "meeting.wav"); err != nil {
+		t.Fatalf("live board: %v", err)
 	}
 	out := status.String()
-	for _, want := range []string{"\x1b[", "phase  bootstrap", "in flight", "left (≤", "phase  done"} {
+	for _, want := range []string{"\x1b[", "phase  finding voices", "in flight", "left (≤", "phase  done"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in live output", want)
 		}
 	}
 }
 
-// slowAssembler holds the first request long enough for the live board to
-// tick while the bootstrap request is being assembled.
-type slowAssembler struct {
-	RequestAssembler
-	delay time.Duration
-	once  sync.Once
-}
-
-func (s *slowAssembler) Assemble(ctx context.Context, req AssembleRequest) (*RequestManifest, error) {
-	s.once.Do(func() { time.Sleep(s.delay) })
-	return s.RequestAssembler.Assemble(ctx, req)
-}
-
-func TestCoordinatorLiveBoardReadsStatesSafely(t *testing.T) {
-	plainStatus(t)
-	p := &voiceProvider{truth: sixVoiceMeeting()}
-	c, asm, _ := newCoordinator(p)
-	c.forceLive = true
-	c.NewAssembler = func(CommandRunner, Budgets, string, time.Duration) (RequestAssembler, error) {
-		return &slowAssembler{RequestAssembler: asm, delay: 3 * board.TickInterval}, nil
-	}
-	if _, err := c.Run(context.Background(), "meeting.wav"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCoordinatorLiveErrorExitKeepsFooter(t *testing.T) {
+// The board's final footer, failures included (R2-01).
+func TestCoordinatorLiveErrorExitWritesTheFinalFooter(t *testing.T) {
 	plainStatus(t)
 	p := &voiceProvider{truth: sixVoiceMeeting(), err: errors.New("status 500")}
 	c, _, status := newCoordinator(p)
@@ -568,11 +222,13 @@ func TestCoordinatorLiveErrorExitKeepsFooter(t *testing.T) {
 		t.Fatal("expected the transcriber error")
 	}
 	out := status.String()
-	last := strings.LastIndex(out, "▸ calibrated diarization")
+	last := strings.LastIndex(out, "▸ speaker labelling")
 	if last < 0 {
 		t.Fatalf("no live frame in:\n%q", out)
 	}
-	if final := out[last:]; !strings.Contains(final, "in flight") {
-		t.Errorf("the error-exit frame must keep the last live footer:\n%q", final)
+	// The live frame cuts the footer at the board's width
+	final := out[last:]
+	if !strings.Contains(final, "  requests 1/≤18 · resent 0 · retries 0 · cache hits 0 · uploaded 7m30s") || strings.Contains(final, "in flight") {
+		t.Errorf("the error-exit frame must end with the final footer:\n%q", final)
 	}
 }

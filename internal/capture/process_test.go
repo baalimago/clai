@@ -22,8 +22,8 @@ const signalWitnessDir = "CAPTURE_SIGNAL_WITNESS_DIR"
 
 // wrapperScript is a recorder like the one of a machine whose ffmpeg cannot
 // take a signal: the wrapper is the one that is told to stop, and it ends its
-// child another way.
-const wrapperScript = `trap 'echo wrapper > "$` + signalWitnessDir + `/wrapper-interrupted"; kill -TERM "$child"' INT
+// child another way, once the test releases it (release).
+const wrapperScript = `trap 'echo wrapper > "$` + signalWitnessDir + `/wrapper-interrupted"; until [ -e "$` + signalWitnessDir + `/released" ]; do sleep 0.01; done; kill -TERM "$child"' INT
 "$1" -test.run='^TestSignalWitness$' >/dev/null 2>&1 &
 child=$!
 while ! wait "$child"; do
@@ -41,7 +41,13 @@ func TestSignalWitness(t *testing.T) {
 	}
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	if err := os.WriteFile(filepath.Join(dir, "ready"), []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+	// WriteFile creates the file before it writes the pid, so ready appears
+	// by a rename, whole.
+	ready := filepath.Join(dir, "ready")
+	if err := os.WriteFile(ready+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatalf("report ready: %v", err)
+	}
+	if err := os.Rename(ready+".tmp", ready); err != nil {
 		t.Fatalf("report ready: %v", err)
 	}
 	select {
@@ -76,15 +82,33 @@ func startWrapper(t *testing.T) (*exec.Cmd, string) {
 	}
 	t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) })
 
+	if !awaitReport(t, dir, "ready") {
+		t.Fatal("the wrapper's child never took signals")
+	}
+	return cmd, dir
+}
+
+// awaitReport waits for the wrapper or its child to report name, for as long
+// as startWrapper waits for its child.
+func awaitReport(t *testing.T, dir, name string) bool {
+	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "ready")); err == nil {
-			return cmd, dir
-		}
+	for !reported(t, dir, name) {
 		if time.Now().After(deadline) {
-			t.Fatal("the wrapper's child never took signals")
+			return false
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	return true
+}
+
+// release lets the wrapper end its child. A test releases it once the stop
+// under test has had its effect on the child, since the wrapper's TERM may
+// otherwise reach the child before a group's interrupt does.
+func release(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "released"), nil, 0o644); err != nil {
+		t.Fatalf("release the wrapper: %v", err)
 	}
 }
 
@@ -106,6 +130,7 @@ func TestInterruptProcess_ReachesTheWrapperAlone(t *testing.T) {
 	if err := interruptProcess(cmd.Process); err != nil {
 		t.Fatalf("interruptProcess: %v", err)
 	}
+	release(t, dir)
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("the wrapper ended with %v, want it to finish by itself", err)
 	}
@@ -126,6 +151,8 @@ func TestInterruptGroup_ReachesTheWrappersChild(t *testing.T) {
 	if err := interruptGroup(cmd.Process); err != nil {
 		t.Fatalf("interruptGroup: %v", err)
 	}
+	awaitReport(t, dir, "child-interrupted")
+	release(t, dir)
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("the wrapper ended with %v, want it to finish by itself", err)
 	}

@@ -3,6 +3,7 @@ package audio
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -75,17 +76,17 @@ func TestConfigZeroMeansDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if b.MaxRequestBytes != 25<<20 || b.MaxRequestDuration != 1400*time.Second || b.MaxSpeakers != 8 {
+	if b.MaxRequestBytes != 25<<20 || b.MaxRequestDuration != 1400*time.Second {
 		t.Errorf("unexpected defaults: %+v", b)
 	}
-	if Default.Transcribe.MaxRequestBytes != 25<<20 || Default.Transcribe.MaxRequestSeconds != 1400 || Default.Transcribe.MaxSpeakers != 8 {
+	if Default.Transcribe.MaxRequestBytes != 25<<20 || Default.Transcribe.MaxRequestSeconds != 1400 {
 		t.Errorf("Default must carry the README defaults for config migration: %+v", Default.Transcribe)
 	}
-	custom, err := ResolveBudgets(TranscribeConfig{MaxRequestBytes: 1 << 20, MaxRequestSeconds: 600, MaxSpeakers: 3})
+	custom, err := ResolveBudgets(TranscribeConfig{MaxRequestBytes: 1 << 20, MaxRequestSeconds: 600})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if custom.MaxRequestBytes != 1<<20 || custom.MaxRequestDuration != 600*time.Second || custom.MaxSpeakers != 3 {
+	if custom.MaxRequestBytes != 1<<20 || custom.MaxRequestDuration != 600*time.Second {
 		t.Errorf("unexpected custom budgets: %+v", custom)
 	}
 }
@@ -94,12 +95,44 @@ func TestConfigRejectsNegativeBudgets(t *testing.T) {
 	cases := map[string]TranscribeConfig{
 		"max-request-bytes":   {MaxRequestBytes: -1},
 		"max-request-seconds": {MaxRequestSeconds: -1},
-		"max-speakers":        {MaxSpeakers: -1},
 	}
 	for field, conf := range cases {
 		_, err := ResolveBudgets(conf)
 		if err == nil || !strings.Contains(err.Error(), field) {
 			t.Errorf("expected error naming %q, got %v", field, err)
 		}
+	}
+}
+
+// The naming's two requests, sent at once, take the replies of their order
+// whichever arrives first; any other call takes the next reply in turn.
+func TestMockScriptPairsTheNamingOrders(t *testing.T) {
+	reply := func(text string) []Segment { return []Segment{{End: time.Second, Speaker: "A", Text: text}} }
+	s := &mockScript{replies: [][]Segment{reply("transcript"), reply("forward"), reply("reversed"), reply("after")}}
+	dir := filepath.Join(t.TempDir(), namingDirPrefix+"1")
+	var got []string
+	for _, path := range []string{"meeting.wav", filepath.Join(dir, namingFile(OrderReversed)), filepath.Join(dir, namingFile(OrderForward)), "again.wav", "more.wav"} {
+		segs, ok := s.next(path)
+		if !ok {
+			got = append(got, "-")
+			continue
+		}
+		got = append(got, segs[0].Text)
+	}
+	if want := []string{"transcript", "reversed", "forward", "after", "-"}; !slices.Equal(got, want) {
+		t.Errorf("replies %v, want %v", got, want)
+	}
+	if segs, ok := s.next(filepath.Join(t.TempDir(), namingFile(OrderForward))); ok {
+		t.Errorf("a file named like a naming request outside a naming directory took %v", segs)
+	}
+	// An order asked again starts the next pair, never an earlier reply.
+	again := &mockScript{replies: [][]Segment{reply("transcript"), reply("forward 1"), reply("reversed 1"), reply("forward 2"), reply("reversed 2")}}
+	got = nil
+	for _, path := range []string{"meeting.wav", filepath.Join(dir, namingFile(OrderForward)), filepath.Join(dir, namingFile(OrderForward)), filepath.Join(dir, namingFile(OrderReversed))} {
+		segs, _ := again.next(path)
+		got = append(got, segs[0].Text)
+	}
+	if want := []string{"transcript", "forward 1", "forward 2", "reversed 2"}; !slices.Equal(got, want) {
+		t.Errorf("replies %v, want %v", got, want)
 	}
 }

@@ -354,9 +354,9 @@ constructor is `cli.Deps.NewImageGenerator`
 
 ### Request Retry
 
-A model request that fails before its stream opens is sent again, so one provider failure does not end a long run. `Querier.streamWithRetry` (`internal/text/step_retry.go`) does this for `claierr.ErrProviderUnavailable` (any 5xx) and `claierr.ErrTransport` (the request got no answer).
+A model request that fails before its stream opens is sent again, so one provider failure does not end a long run. `Querier.streamWithRetry` (`internal/text/step_retry.go`) does this through `resend.Do` (`internal/resend`) with the policy `resend.Unanswered`: `claierr.ErrProviderUnavailable` (any 5xx) and `claierr.ErrTransport` (the request got no answer). Transcription requests use the same mechanism with `resend.Throttled`, which adds rate limits ([audio.md](./audio.md#request-retries)).
 
-- The CLI waits 1s, 10s, 30s and 60s (`text.DefaultStepRetry`), then returns the last error: 5 requests and 101s of waiting, and each request adds its own time.
+- The CLI waits 1s, 10s, 30s and 60s (`resend.Default`), then returns the last error: 5 requests and 101s of waiting, and each request adds its own time.
 - Each step gets the whole schedule. A failure in one step does not spend a later step's retries, so no limit spans a run.
 - The conversation continues where it is. A failed request changed nothing: tool results reach the chat only after a step answers, so no tool runs twice.
 - A failure inside an open stream is not retried, because text from it may be on the screen. A stalled stream has no timeout.
@@ -369,7 +369,7 @@ A model request that fails before its stream opens is sent again, so one provide
 
 ### Rate Limit Handling
 
-A rate limit surfaces as a typed, terminal error on the step: the runner returns it on the first call, unretried (`claierr.ErrRateLimited` via `errors.Is`, facts such as `ResetAt` via `errors.As`). clai itself never sleeps or retries a throttled call — retry policy belongs to the caller, which has the context to choose it (worklog `2026-09-05-error-propagation`, phase 3; [errors.md](./errors.md)). `InputTokenCounter` remains in use only for the token stoploss budget, not for backoff.
+A rate limit surfaces as a typed, terminal error on a text step: the runner returns it on the first call, unretried (`claierr.ErrRateLimited` via `errors.Is`, facts such as `ResetAt` via `errors.As`). clai itself never sleeps or retries a throttled call — retry policy belongs to the caller, which has the context to choose it (worklog `2026-09-05-error-propagation`, phase 3; [errors.md](./errors.md)). `InputTokenCounter` remains in use only for the token stoploss budget, not for backoff.
 
 ## Tool Calls
 

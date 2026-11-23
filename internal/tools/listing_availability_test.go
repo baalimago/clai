@@ -298,6 +298,7 @@ func TestBuiltinCatalogHoldsEveryShippedTool(t *testing.T) {
 		"async_cmd_logs",
 		"async_cmd_status",
 		"audio_record",
+		"audio_remember_voice",
 		"audio_sources",
 		"audio_transcribe",
 		"cat",
