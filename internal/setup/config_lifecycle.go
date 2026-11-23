@@ -9,6 +9,7 @@ import (
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
@@ -30,6 +31,12 @@ func ConfigRunPrep(ctx context.Context, deferAnnouncements bool) (string, []stri
 	}
 
 	announcements := migrateConfigs(ctx, claiConfDir, deferAnnouncements)
+	// The previous-query record supersedes the full-mirror file older versions
+	// wrote. Migrating here, beside the config migration, keeps the read-only
+	// chat listings (which never reach this prep) free of write side effects.
+	if err := chat.MigratePreviousQuery(ctx, claiConfDir); err != nil {
+		runenv.Warnf(ctx, runenv.SubsystemChat, "failed to migrate the previous query record: %v\n", err)
+	}
 	return claiConfDir, announcements, nil
 }
 

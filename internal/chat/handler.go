@@ -253,7 +253,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	runenv.Tracef(ctx, runenv.SubsystemChat, "prompt: %v", cq.prompt)
 
 	// Special case: `clai chat continue` with an empty string continues the chat
-	// in the current directory. Fallback: globalScope.
+	// in the current directory. Fallback: the previous query.
 	if strings.TrimSpace(cq.prompt) == "" {
 		// 1) dir-scoped (CWD)
 		if dsID, err := LoadDirScopeChatID(cq.confDir); err == nil && strings.TrimSpace(dsID) != "" {
@@ -272,22 +272,20 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 			return nil
 		}
 
-		// 2) globalScope
+		// 2) the conversation the latest run wrote
 	global_scope:
-		g, err := LoadGlobalScope(ctx, cq.confDir)
+		prev, err := LoadPreviousQuery(ctx, cq.confDir)
 		if err != nil {
-			return diag.Errorf("load global scope chat: %w", err)
-		}
-		if strings.TrimSpace(g.ID) != "" {
-			if err := cq.printChat(g); err != nil {
-				return diag.Errorf("print global scope chat: %w", err)
+			if errors.Is(err, ErrNoPreviousQuery) {
+				runenv.Warnf(ctx, runenv.SubsystemChat, "no previous query found")
+				return nil
 			}
-			return nil
+			return diag.Errorf("load previous query: %w", err)
 		}
-
-		// 3) no chat found
-		runenv.Failuref(ctx, runenv.SubsystemChat, "could not find chat with id: \"\"")
-		return cq.handleListCmd(ctx)
+		if err := cq.printChat(prev.Chat); err != nil {
+			return diag.Errorf("print previous query chat: %w", err)
+		}
+		return nil
 	}
 
 	chat, err := cq.findChatByID(ctx, cq.prompt, foreignClone)
@@ -354,6 +352,11 @@ func (cq *ChatHandler) deleteFromPrompt(ctx context.Context) error {
 	}
 	if err != nil {
 		return diag.Errorf("failed to delete chat: %w", err)
+	}
+	// A record naming the deleted conversation would make the next reply report
+	// a dangling pointer; clearing it lets that reply start fresh instead.
+	if err := clearPreviousQueryRecord(ctx, cq.confDir, c.ID); err != nil {
+		return diag.Errorf("clear previous query record for deleted chat %q: %w", c.ID, err)
 	}
 	runenv.Noticef(ctx, runenv.SubsystemChat, "deleted chat '%v'", c.ID)
 	return nil

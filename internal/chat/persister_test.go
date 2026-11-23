@@ -381,10 +381,15 @@ func TestFreeWriters_StorePending(t *testing.T) {
 		t.Fatalf("SaveAsPreviousQuery without id: %v", err)
 	}
 
-	globalPath := filepath.Join(convDir, globalScopeFile)
-	copyLegacyFixture(t, globalPath)
-	if _, err := LoadGlobalScope(context.Background(), confDir); err != nil {
-		t.Fatalf("LoadGlobalScope id rewrite: %v", err)
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("LoadPreviousQuery: %v", err)
+	}
+	if prev.Chat.ID == "" || prev.Chat.ID == c.ID {
+		t.Fatalf("record names %q, want the id-less chat's promoted copy", prev.Chat.ID)
+	}
+	if _, err := os.Stat(conversationPath(confDir, prev.Chat.ID)); err != nil {
+		t.Fatalf("the record must name a conversation file: %v", err)
 	}
 
 	entries, err := os.ReadDir(convDir)
@@ -399,8 +404,8 @@ func TestFreeWriters_StorePending(t *testing.T) {
 		written++
 		assertRefsOnly(t, filepath.Join(convDir, e.Name()), ref)
 	}
-	if written != 4 {
-		t.Fatalf("found %d conversation files, want legacy, summarized, promoted and globalScope", written)
+	if written != 3 {
+		t.Fatalf("found %d conversation files, want legacy, summarized and promoted", written)
 	}
 	assertAssets(t, assetDir, ref)
 }
@@ -446,30 +451,36 @@ func TestPersister_LoadCodecError(t *testing.T) {
 }
 
 func TestPersister_PromoteShares(t *testing.T) {
-	p, _, convDir, assetDir := newDiskPersister(t)
+	p, confDir, convDir, assetDir := newDiskPersister(t)
 	img := testPNG(t, 6)
 	ref := pngRef(img)
 
-	if err := p.Promote(context.Background(), imageChat("", img)); err != nil {
+	if err := p.Promote(context.Background(), imageChat("", img), RunAnswered); err != nil {
 		t.Fatalf("Promote without id: %v", err)
 	}
 	files := conversationFiles(t, convDir)
-	if len(files) != 2 || !slices.Contains(files, globalScopeFile) {
-		t.Fatalf("conversation files = %v, want globalScope and one promoted copy", files)
+	if len(files) != 1 {
+		t.Fatalf("conversation files = %v, want exactly one promoted copy", files)
 	}
 	for _, f := range files {
 		assertRefsOnly(t, filepath.Join(convDir, f), ref)
 	}
 	assertAssets(t, assetDir, ref)
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("LoadPreviousQuery: %v", err)
+	}
+	if want := strings.TrimSuffix(files[0], ".json"); prev.Chat.ID != want {
+		t.Fatalf("record names %q, want the promoted copy %q", prev.Chat.ID, want)
+	}
 
-	if err := p.Promote(context.Background(), imageChat("kept", img)); err != nil {
+	if err := p.Promote(context.Background(), imageChat("kept", img), RunAnswered); err != nil {
 		t.Fatalf("Promote with id: %v", err)
 	}
-	if files := conversationFiles(t, convDir); len(files) != 3 || !slices.Contains(files, "kept.json") {
+	if files := conversationFiles(t, convDir); len(files) != 2 || !slices.Contains(files, "kept.json") {
 		t.Fatalf("conversation files = %v, want the chat's own file and no new promoted copy", files)
 	}
 	assertRefsOnly(t, filepath.Join(convDir, "kept.json"), ref)
-	assertRefsOnly(t, filepath.Join(convDir, globalScopeFile), ref)
 	assertAssets(t, assetDir, ref)
 }
 
@@ -498,9 +509,7 @@ func TestPersister_DeleteSweeps(t *testing.T) {
 	if _, err := p.Save(context.Background(), imageChat("b", x)); err != nil {
 		t.Fatalf("Save b: %v", err)
 	}
-	global := imageChat("", x)
-	global.Messages = global.Messages[1:]
-	if err := p.Promote(context.Background(), global); err != nil {
+	if err := p.Promote(context.Background(), imageChat("c", x), RunAnswered); err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
 	assertAssets(t, assetDir, refX, refY)
@@ -515,12 +524,12 @@ func TestPersister_DeleteSweeps(t *testing.T) {
 	assertAssets(t, assetDir, refX)
 
 	if n, err := p.Delete("b"); err != nil || n != 0 {
-		t.Fatalf("Delete b = %d, %v; want 0 while globalScope holds X", n, err)
+		t.Fatalf("Delete b = %d, %v; want 0 while c holds X", n, err)
 	}
 	assertAssets(t, assetDir, refX)
 
-	if n, err := p.Delete(globalScopeChatID); err != nil || n != 1 {
-		t.Fatalf("Delete globalScope = %d, %v; want 1", n, err)
+	if n, err := p.Delete("c"); err != nil || n != 1 {
+		t.Fatalf("Delete c = %d, %v; want 1", n, err)
 	}
 	assertAssets(t, assetDir)
 }
@@ -685,29 +694,23 @@ func TestPersister_TextOnlyUnchanged(t *testing.T) {
 			t.Fatalf("Save %s: %v", c.ID, err)
 		}
 	}
-	if got := snapshotConvDir(t, convDir, plain.ID, tools.ID); got != readGolden(t, "save.golden") {
-		t.Fatalf("Save output differs from the pre-worklog golden:\n%s", got)
-	}
+	assertGolden(t, "save.golden", snapshotConvDir(t, convDir, plain.ID, tools.ID))
 	assertNoAssetDir(t, assetDir)
 
 	p, _, convDir, assetDir = newDiskPersister(t)
 	fresh := plain
 	fresh.ID = ""
-	if err := p.Promote(context.Background(), fresh); err != nil {
+	if err := p.Promote(context.Background(), fresh, RunAnswered); err != nil {
 		t.Fatalf("Promote without id: %v", err)
 	}
-	if got := snapshotConvDir(t, convDir); got != readGolden(t, "promote-new.golden") {
-		t.Fatalf("Promote output differs from the pre-worklog golden:\n%s", got)
-	}
+	assertGolden(t, "promote-new.golden", snapshotConvDir(t, convDir))
 	assertNoAssetDir(t, assetDir)
 
 	p, _, convDir, assetDir = newDiskPersister(t)
-	if err := p.Promote(context.Background(), tools); err != nil {
+	if err := p.Promote(context.Background(), tools, RunAnswered); err != nil {
 		t.Fatalf("Promote with id: %v", err)
 	}
-	if got := snapshotConvDir(t, convDir, tools.ID); got != readGolden(t, "promote-existing.golden") {
-		t.Fatalf("Promote output differs from the pre-worklog golden:\n%s", got)
-	}
+	assertGolden(t, "promote-existing.golden", snapshotConvDir(t, convDir, tools.ID))
 	assertNoAssetDir(t, assetDir)
 }
 

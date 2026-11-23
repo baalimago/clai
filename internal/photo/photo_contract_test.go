@@ -18,6 +18,7 @@ import (
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/imagegentest"
 	"github.com/baalimago/clai/internal/imageinput"
@@ -228,10 +229,13 @@ func writeFile(t *testing.T, path string, data []byte) string {
 	return path
 }
 
-func writeGlobalScope(t *testing.T, confDir, messages string) {
+func writePreviousQuery(t *testing.T, confDir, messages string) {
 	t.Helper()
-	writeFile(t, filepath.Join(confDir, "conversations", "globalScope.json"),
-		[]byte(`{"created":"2026-10-01T00:00:00Z","id":"globalScope","messages":`+messages+`}`))
+	writeFile(t, filepath.Join(confDir, "conversations", "previous-chat.json"),
+		[]byte(`{"created":"2026-10-01T00:00:00Z","id":"previous-chat","messages":`+messages+`}`))
+	if err := chat.SavePreviousQuery(context.Background(), confDir, "previous-chat", time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
+	}
 }
 
 // Proves photo.1–3, AC1.
@@ -394,7 +398,7 @@ func TestPhoto_StdinImage(t *testing.T) {
 func TestPhoto_ReplyAppendsPreviousImage(t *testing.T) {
 	f := newFixture(t)
 	legacy := base64.StdEncoding.EncodeToString(pngData)
-	writeGlobalScope(t, f.confDir, `[{"role":"user","content":[{"type":"text","text":"a cat"},`+
+	writePreviousQuery(t, f.confDir, `[{"role":"user","content":[{"type":"text","text":"a cat"},`+
 		`{"type":"image_url","image_url":{"url":"data:image/png;base64,`+legacy+`"}}]},`+
 		`{"role":"assistant","content":"a cat it is"}]`)
 	f.prevImage = asset.Image{Data: jpegData, MIME: "image/jpeg"}
@@ -426,7 +430,7 @@ func TestPhoto_ReplyAppendsPreviousImage(t *testing.T) {
 // Proves photo.4.
 func TestPhoto_ReplyNoPreviousImage(t *testing.T) {
 	f := newFixture(t)
-	writeGlobalScope(t, f.confDir, `[{"role":"user","content":"a red fox"},{"role":"assistant","content":"here is a fox"}]`)
+	writePreviousQuery(t, f.confDir, `[{"role":"user","content":"a red fox"},{"role":"assistant","content":"here is a fox"}]`)
 
 	o := f.run("-re", "make", "it", "purple")
 	if o.err != nil {
@@ -690,7 +694,7 @@ func TestPhoto_OnlyInjectedGenerator(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 	t.Setenv("OPENAI_API_KEY", "")
 	f.confDir = confDir
-	writeGlobalScope(t, confDir, `[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+
+	writePreviousQuery(t, confDir, `[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,`+
 		base64.StdEncoding.EncodeToString(pngData)+`"}}]}]`)
 
 	deps := f.deps()

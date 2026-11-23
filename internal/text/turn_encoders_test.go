@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -143,9 +142,9 @@ func memoryTurn(store *assettest.Memory, out io.Writer, confDir string) *ImageTu
 // assertPromotedRefs checks that the turn promoted a chat whose image is a ref, never its bytes.
 func assertPromotedRefs(t *testing.T, confDir string, image []byte) {
 	t.Helper()
-	saved, err := os.ReadFile(filepath.Join(confDir, "conversations", "globalScope.json"))
+	saved, err := os.ReadFile(previousQueryConversationPath(t, confDir))
 	if err != nil {
-		t.Fatalf("the turn promoted nothing: %v", err)
+		t.Fatalf("read the promoted conversation: %v", err)
 	}
 	sum := sha256.Sum256(image)
 	if !bytes.Contains(saved, []byte(`"`+hex.EncodeToString(sum[:])+`.png"`)) || bytes.Contains(saved, []byte(base64.StdEncoding.EncodeToString(image))) {

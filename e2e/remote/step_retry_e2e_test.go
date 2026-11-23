@@ -19,24 +19,14 @@ import (
 
 const stepRetryCrashBody = "upstream connect error or disconnect/reset before headers. reset reason: connection timeout"
 
-// stepRetryProvider answers 503 to the first failures requests, then a reply.
-// It seeds a config dir whose model gpt-stub talks to it.
-func stepRetryProvider(t *testing.T, failures int32) (string, *atomic.Int32) {
+// stubProvider serves handler as the model gpt-stub of a fresh config dir.
+func stubProvider(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
 	original := http.DefaultTransport
 	http.DefaultTransport = e2etest.LoopbackOnly{Base: original}
 	t.Cleanup(func() { http.DefaultTransport = original })
 
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if requests.Add(1) <= failures {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(stepRetryCrashBody))
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"THE-REPLY\"}}]}\n\ndata: [DONE]\n\n")
-	}))
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	confDir := e2etest.SetupMainTestConfigDir(t)
@@ -48,6 +38,27 @@ func stepRetryProvider(t *testing.T, failures int32) (string, *atomic.Int32) {
 	if err := os.WriteFile(filepath.Join(confDir, "openai_gpt_gpt-stub.json"), conf, 0o644); err != nil {
 		t.Fatalf("write model config: %v", err)
 	}
+	return confDir
+}
+
+func writeStubReply(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"THE-REPLY\"}}]}\n\ndata: [DONE]\n\n")
+}
+
+// stepRetryProvider answers 503 to the first failures requests, then a reply.
+// It seeds a config dir whose model gpt-stub talks to it.
+func stepRetryProvider(t *testing.T, failures int32) (string, *atomic.Int32) {
+	t.Helper()
+	var requests atomic.Int32
+	confDir := stubProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) <= failures {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(stepRetryCrashBody))
+			return
+		}
+		writeStubReply(w)
+	})
 	return confDir, &requests
 }
 

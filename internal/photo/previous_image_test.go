@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/chat"
@@ -23,16 +24,19 @@ func TestPreviousQueryImage(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(confDir, "conversations"), 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
-		c := pub_models.Chat{ID: "globalScope", Messages: msgs}
+		c := pub_models.Chat{ID: "previous-chat", Messages: msgs}
 		if _, err := chat.NewPersister(confDir, asset.NewStore(chat.AssetsDir(confDir))).Save(context.Background(), c); err != nil {
 			t.Fatalf("Save: %v", err)
+		}
+		if err := chat.SavePreviousQuery(context.Background(), confDir, c.ID, time.Now()); err != nil {
+			t.Fatalf("SavePreviousQuery: %v", err)
 		}
 	}
 	image := func(data []byte) pub_models.ImagePart {
 		return pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginUser, Data: data}
 	}
 
-	t.Run("no globalScope.json", func(t *testing.T) {
+	t.Run("no previous query", func(t *testing.T) {
 		if _, err := photo.PreviousQueryImage(context.Background(), t.TempDir()); !errors.Is(err, photo.ErrNoPreviousImage) {
 			t.Fatalf("err = %v, want ErrNoPreviousImage", err)
 		}
@@ -67,8 +71,11 @@ func TestPreviousQueryImage(t *testing.T) {
 		}
 		legacy := `{"id":"globalScope","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,` +
 			base64.StdEncoding.EncodeToString(first) + `"}}]}]}`
-		if err := os.WriteFile(chat.GlobalScopePath(confDir), []byte(legacy), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(convDir, "previous-chat.json"), []byte(legacy), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
+		}
+		if err := chat.SavePreviousQuery(context.Background(), confDir, "previous-chat", time.Now()); err != nil {
+			t.Fatalf("SavePreviousQuery: %v", err)
 		}
 		got, err := photo.PreviousQueryImage(context.Background(), confDir)
 		if err != nil || !bytes.Equal(got.Data, first) || got.MIME != "image/png" {
@@ -90,13 +97,17 @@ func TestPreviousQueryImage(t *testing.T) {
 		}
 	})
 
-	t.Run("an unreadable globalScope.json fails", func(t *testing.T) {
+	t.Run("an unreadable conversation fails", func(t *testing.T) {
 		confDir := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(confDir, "conversations"), 0o755); err != nil {
+		convDir := filepath.Join(confDir, "conversations")
+		if err := os.MkdirAll(convDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
-		if err := os.WriteFile(chat.GlobalScopePath(confDir), []byte("{"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(convDir, "previous-chat.json"), []byte("{"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
+		}
+		if err := chat.SavePreviousQuery(context.Background(), confDir, "previous-chat", time.Now()); err != nil {
+			t.Fatalf("SavePreviousQuery: %v", err)
 		}
 		_, err := photo.PreviousQueryImage(context.Background(), confDir)
 		if err == nil || errors.Is(err, photo.ErrNoPreviousImage) {

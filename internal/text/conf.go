@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -369,7 +370,7 @@ func (c *Configurations) setupSystemPrompt() {
 func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) error {
 	traceChatf(ctx, "setup initial chat start reply_mode=%t glob=%q args=%d", c.ReplyMode, c.Glob, len(args))
 	if c.Glob != "" && c.ReplyMode {
-		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "Using glob + reply modes together might yield strange results. The previous query will be appended after the glob messages.\n")
 	}
 
 	if !c.ReplyMode {
@@ -391,31 +392,22 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 	if c.ReplyMode {
 		// DirReplyMode loads context directly from the directory binding
 		// (pre-populated in InitialChat before SetupInitialChat). Skip the
-		// globalScope.json read entirely — no filesystem roundtrip needed.
+		// previous-query read entirely.
 		if c.DirReplyMode || c.ReplyChatID != "" {
-			traceChatf(ctx, "setup initial chat skipping globalScope load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
+			traceChatf(ctx, "setup initial chat skipping previous query load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
 		} else {
 			traceChatf(ctx, "setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
-			iP, err := chat.LoadPrevQuery(ctx, c.ConfigDir)
+			prev, err := chat.LoadPreviousQuery(ctx, c.ConfigDir)
 			if err != nil {
-				return diag.Errorf("failed to load previous query: %w", err)
+				if !errors.Is(err, chat.ErrNoPreviousQuery) {
+					return diag.Errorf("failed to load previous query: %w", err)
+				}
+				runenv.Warnf(ctx, runenv.SubsystemChat, "no previous query found")
+			} else {
+				c.InitialChat = continueConversation(c.InitialChat, prev.Chat)
+				traceChatf(ctx, "setup initial chat adopted previous query chat_id=%q messages=%d, queries=%d", prev.Chat.ID, len(prev.Chat.Messages), len(prev.Chat.Queries))
+				traceChatf(ctx, "setup initial chat appended previous query messages=%d total_messages=%d", len(prev.Chat.Messages), len(c.InitialChat.Messages))
 			}
-			if c.InitialChat.ID == "" && iP.ID != "" && iP.ID != "globalScope" {
-				c.InitialChat.ID = iP.ID
-				traceChatf(ctx, "setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
-			}
-			if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
-				c.InitialChat.Created = iP.Created
-				traceChatf(ctx, "setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
-			}
-			if c.InitialChat.Summary == "" && iP.Summary != "" {
-				c.InitialChat.Title, c.InitialChat.Summary, c.InitialChat.SummaryAt = iP.Title, iP.Summary, iP.SummaryAt
-				traceChatf(ctx, "setup initial chat adopted previous query title=%q summary_at=%q", iP.Title, iP.SummaryAt.Format(time.RFC3339Nano))
-			}
-			traceChatf(ctx, "setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
-			c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
-			c.InitialChat.Queries = append(c.InitialChat.Queries, iP.Queries...)
-			traceChatf(ctx, "setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
 		}
 	}
 
@@ -625,4 +617,25 @@ func (c *Configurations) diagContext() context.Context {
 		return context.Background()
 	}
 	return c.runCtx
+}
+
+// continueConversation makes the previous conversation the chat that will be
+// written back over its file, whole, so a reply cannot drop a field it does not
+// know of (source, source id, the label, usage, whatever is added later). The
+// run's own messages and queries stay before the conversation's. The run's id,
+// creation time and profile win when it set them.
+func continueConversation(own, prev pub_models.Chat) pub_models.Chat {
+	adopted := prev
+	adopted.Messages = slices.Concat(own.Messages, prev.Messages)
+	adopted.Queries = slices.Concat(own.Queries, prev.Queries)
+	if own.ID != "" {
+		adopted.ID = own.ID
+	}
+	if !own.Created.IsZero() {
+		adopted.Created = own.Created
+	}
+	if own.Profile != "" {
+		adopted.Profile = own.Profile
+	}
+	return adopted
 }

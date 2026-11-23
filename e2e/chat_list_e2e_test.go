@@ -884,7 +884,7 @@ func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
 	// Work in a temp dir with no dirscope bindings.
 	workDir := t.TempDir()
 
-	// No chats seeded — empty conv dir (except for the index/globalScope).
+	// No chats seeded — empty conv dir (except for the index).
 
 	// d=toggle dir filter ON → empty view → trailing q exits
 	stdout, status := harness.RunOne(t, workDir, "-n -r c l d")

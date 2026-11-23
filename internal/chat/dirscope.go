@@ -243,7 +243,7 @@ func EnsureOriginDir(ctx context.Context, confDir string, chat *pub_models.Chat)
 	if chat == nil || chat.OriginDir != "" {
 		return nil
 	}
-	if chat.ID != "" && chat.ID != globalScopeChatID {
+	if chat.ID != "" {
 		if existing, err := FromPath(ctx, conversationPath(confDir, chat.ID)); err == nil && existing.OriginDir != "" {
 			chat.OriginDir = existing.OriginDir
 			return nil

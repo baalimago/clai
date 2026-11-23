@@ -1,6 +1,6 @@
 == chat_index.cache
 {
-  "version": 2,
+  "version": 3,
   "rows": [
     {
       "id": "text-plain",

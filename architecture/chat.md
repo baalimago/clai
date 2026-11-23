@@ -8,7 +8,7 @@ There are two related mechanisms:
 
 1. **Conversation transcripts** stored on disk as JSON (so they can be replayed/inspected/edited later).
 2. **Reply context pointers**:
-   - `globalScope.json` (global reply context)
+   - `conversations/state/previousQuery.json` (global reply context: a pointer record, not a conversation)
    - directory-scoped bindings under `conversations/dirs/` (per-CWD reply context)
 
 Important behavioral change vs older versions:
@@ -135,7 +135,7 @@ reaches disk with a pending image:
   sniff as the declared type (`asset.ErrNotImage` or `*asset.MIMEMismatchError`, naming the path
   and message index). The file is rewritten as refs only on its next save.
 - `Delete` removes the conversation and its reasoning sidecar, then sweeps every asset that no
-  remaining `conversations/*.json` file references, `globalScope.json` included. A missing id is
+  remaining `conversations/*.json` file references. A missing id is
   `ErrChatNotFound`. A failed sweep, or a conversation file it cannot decode, is
   `*SweepFailedError`, and the sweep then removes nothing. A sidecar that cannot be removed does
   not stop the delete or the sweep: it is a typed, non-fatal error returned after the sweep, and
@@ -148,8 +148,9 @@ Every reader of a conversation the user continues goes through `Load`: `-re`
 (`LoadPrevQuery`), `-dre` (`LoadDirScopedContext`), `chat continue`, `chat delete` and replay.
 Cloning a foreign conversation on continue writes it with `Save`, and `chat delete` is
 `Delete`, so it sweeps the assets only that conversation referenced. `chat.AssetsDir(confDir)`
-and `chat.GlobalScopePath(confDir)` name the asset directory and `globalScope.json` for other
-packages; `photo.PreviousQueryImage` reads the last image of the previous query through them.
+and `chat.PreviousQueryPath(confDir)` name the asset directory and the previous-query record for
+other packages; `photo.PreviousQueryImage` reads the last image of the previous query through
+`chat.LoadPreviousQuery`.
 
 #### Images on text surfaces
 
@@ -224,17 +225,17 @@ This makes chats composable with normal shell tooling (pipes, redirects, history
 `clai query <prompt>`:
 
 - creates/updates a transcript
-- updates the global previous query (`globalScope.json`)
+- updates the previous-query record (`conversations/state/previousQuery.json`) to name the conversation it wrote
 - updates the directory binding for the current working directory (CWD)
 
 Subsequent queries can be threaded using:
 
-- `-re` (reply to global previous query)
+- `-re` (continue the previous query's conversation in place)
 - `-dre` (reply to directory-scoped previous query)
 
 ### `chat dir` and `chat dirv2`
 
-Both commands show information for the conversation that is bound to the current directory. They use `globalScope.json` when no directory binding exists.
+Both commands show information for the conversation that is bound to the current directory. They use the conversation the previous-query record names when no directory binding exists.
 
 `clai chat dir` keeps the original text and JSON formats. This format does not show `RecentTokenUsage`.
 
@@ -355,34 +356,69 @@ above; one that draws a VS16 emoji (❤️) two cells wide can use more, and lea
   vendors reject empty messages. The warning points to `[d]elete`, or, for a tool result, to
   replacing its text, since deleting it would leave its call without a result.
 - delete messages
-- save as `globalScope.json`
+- make it the previous query (writes the record)
 
 No interactive chat session is started from this UI.
 
 ## “Previous query” capture and replay
 
-A special chat file is used for the global reply context:
+A small record names the conversation `-re` continues:
 
-- `<clai-config>/conversations/globalScope.json`
+- `<clai-config>/conversations/state/previousQuery.json`
 
-Implemented in `internal/chat/reply.go`.
+```json
+{ "version": 1, "chat_id": "7f3a9c…c91", "updated": "2026-11-16T15:58:36.402Z" }
+```
+
+It holds a pointer only, no messages. It lives one directory below `conversations/`, so the
+conversation namespace never lists, indexes, syncs or sweeps it. Implemented in
+`internal/chat/previous.go` (record) and `internal/chat/reply.go` (`promote`).
 
 ### SaveAsPreviousQuery
 
-`SaveAsPreviousQuery(claiConfDir, msgs)` writes:
+`SaveAsPreviousQuery(ctx, claiConfDir, chat)` (the name is historical; it saves a chat that was not
+produced by a failed run) and `Persister.Promote(ctx, chat, outcome)` (the text finalizer, which
+passes a `chat.RunOutcome`) do, in this order:
 
-- always: `globalScope.json` with ID `globalScope`
-- additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `HashIDFromPrompt(firstUserMsg.Content)`
+1. Stores pending images once, so every written file references the same asset files.
+2. When the chat has no id, more than two messages and does not end in a user message, writes it as a
+   new conversation under a fresh `chatid.New()` id. This keeps one-off queries without a reply out
+   of the corpus. The exception is `RunFailedBeforeAnswer` (the run failed, `session.Failed`): a
+   fresh chat ending on the user's prompt is saved too, with no queries, and the record moves to it,
+   so the next `-re` retries with the prompt instead of silently continuing an older conversation.
+   A run that succeeds is unchanged.
+3. When the chat has an id, writes its conversation file.
+4. Writes the record naming that conversation, last, so a crash leaves a pointer at a real file.
 
-This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
-Pending images are stored once before any file is written, so every copy references the same
-asset files.
+Nothing persisted means the existing record stays. The sentinel id `globalScope` and an unsafe id are
+refused as record targets.
 
-The mirror is built by **explicit field copy**, so a field added to `Chat` must be copied there (and into the promotion copy) or it is lost on reply. `title`, `summary` and `summary_at` are mirrored. Because the mirror carries `ID: globalScope`, a plain `-re` **forks**: `SetupInitialChat` (`internal/text/conf.go`) adopts `Created`, `Messages`, `Queries` and — when its own chat has no summary — the three label fields from the mirror, generates a fresh id, and the finalizer writes a new conversation file next to the untouched parent. The fork therefore inherits its parent's label and the in-flight summarizer does not run for it. `-dre` continues the bound conversation in place from the full file and needs no adoption.
+### `-re` continues in place
 
-### LoadPrevQuery
+`SetupInitialChat` (`internal/text/conf.go`) resolves the record with `LoadPreviousQuery` and adopts
+the conversation whole (`continueConversation`), the way `-dre` does, rather than by a field list:
+`Source`, `SourceID`, label, `origin_dir`, `group_key`, usage and every field added later survive, so
+a `-re` on a clone from another tool or on a fork keeps its source and parent link. The run's own
+`ID`, `Created` and `Profile` win when set. Its messages and queries (for example a `-g` glob) stay
+before the conversation's. The finalizer then rewrites the same conversation file: a plain `-re` adds
+no file, the index keeps one row, and the in-flight summarizer sees an already labelled chat.
 
-Loads `globalScope.json` (printing a warning if absent).
+### LoadPreviousQuery
+
+`LoadPreviousQuery(ctx, confDir)` returns the record's `updated` time and the conversation it names.
+`LoadPrevQuery` returns the conversation only.
+
+- No record: `ErrNoPreviousQuery`. `-re` warns `no previous query found` and runs as a plain query.
+- Record names a file that is gone: `ErrPreviousQueryGone`.
+- `chat delete <id>` removes a record that names `<id>`, so the next `-re` starts fresh.
+
+### Migration
+
+Installs older than the record hold a full mirror (`conversations/globalScope.json`, earlier
+`prevQuery.json`) that carries the sentinel id. `MigratePreviousQuery` runs once, from the query
+write-path preparation (`internal/setup/config_lifecycle.go`), never from read-only listings or
+`replay`. It finds the conversation whose messages equal the mirror's (newest file on a tie), writes
+the record, then removes the mirror. With no match it warns and leaves the mirror in place.
 
 ## Directory-scoped replies
 

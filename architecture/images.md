@@ -145,7 +145,7 @@ ref, so they open directly. A conversation's JSON holds
 `{"type":"image","asset":"<ref>","mime":…,"origin":…}` parts. A conversation saved before images,
 with `image_url` data URLs, loads with those images as pending parts and is rewritten with refs on
 its next save, never before. `clai chat delete` sweeps every asset that no remaining
-conversation file references, `globalScope.json` included. Every reader of a conversation the
+conversation file references. Every reader of a conversation the
 user continues (`-re`, `-dre`, `chat continue`, replay) goes through `chat.Persister.Load`. See
 [chat.md](./chat.md#conversation-persister-internalchatpersistergo).
 

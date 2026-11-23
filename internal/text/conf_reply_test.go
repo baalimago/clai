@@ -2,23 +2,18 @@ package text
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestConfigurations_SetupInitialChat_DirReplyModeSkipsGlobalScope(t *testing.T) {
+func TestConfigurations_SetupInitialChat_DirReplyModeSkipsPreviousQuery(t *testing.T) {
 	confDir := t.TempDir()
-	convDir := filepath.Join(confDir, "conversations")
-	if err := os.MkdirAll(convDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q): %v", convDir, err)
-	}
 
-	// Populate globalScope.json with stale content — this MUST be ignored.
+	// Populate the previous query with stale content — this MUST be ignored.
 	stale := pub_models.Chat{
 		Created: time.Now(),
 		ID:      "stale-chat",
@@ -28,13 +23,7 @@ func TestConfigurations_SetupInitialChat_DirReplyModeSkipsGlobalScope(t *testing
 			{Role: "assistant", Content: "stale response"},
 		},
 	}
-	b, err := json.Marshal(stale)
-	if err != nil {
-		t.Fatalf("Marshal(stale): %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-		t.Fatalf("WriteFile(globalScope.json): %v", err)
-	}
+	seedPreviousQuery(t, confDir, stale)
 
 	// Simulate dirscope-preloaded InitialChat (same as LoadDirScopedContext would produce).
 	dirHead := pub_models.Chat{
@@ -57,10 +46,10 @@ func TestConfigurations_SetupInitialChat_DirReplyModeSkipsGlobalScope(t *testing
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 
-	// Verify the stale globalScope was not loaded (no "stale query" message present).
+	// Verify the stale previous query was not loaded (no "stale query" message present).
 	for _, msg := range conf.InitialChat.Messages {
 		if msg.Content == "stale query" || msg.Content == "stale response" {
-			t.Fatalf("stale globalScope content leaked into InitialChat: %q", msg.Content)
+			t.Fatalf("stale previous query content leaked into InitialChat: %q", msg.Content)
 		}
 	}
 
@@ -84,13 +73,15 @@ func TestConfigurations_SetupInitialChat_DirReplyModeSkipsGlobalScope(t *testing
 	}
 }
 
+func seedPreviousQuery(t *testing.T, confDir string, c pub_models.Chat) {
+	t.Helper()
+	if err := chat.SaveAsPreviousQuery(context.Background(), confDir, c); err != nil {
+		t.Fatalf("SaveAsPreviousQuery(%q): %v", c.ID, err)
+	}
+}
+
 func TestConfigurations_SetupInitialChat_ReplyModeKeepsPreviousQueryMessages(t *testing.T) {
 	confDir := t.TempDir()
-	convDir := filepath.Join(confDir, "conversations")
-	if err := os.MkdirAll(convDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q): %v", convDir, err)
-	}
-
 	prev := pub_models.Chat{
 		Created: time.Now(),
 		ID:      "existing-chat",
@@ -100,13 +91,7 @@ func TestConfigurations_SetupInitialChat_ReplyModeKeepsPreviousQueryMessages(t *
 			{Role: "assistant", Content: "after"},
 		},
 	}
-	b, err := json.Marshal(prev)
-	if err != nil {
-		t.Fatalf("Marshal(prev): %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-		t.Fatalf("WriteFile(globalScope.json): %v", err)
-	}
+	seedPreviousQuery(t, confDir, prev)
 
 	conf := Default
 	conf.ConfigDir = confDir
@@ -124,40 +109,29 @@ func TestConfigurations_SetupInitialChat_ReplyModeKeepsPreviousQueryMessages(t *
 	}
 }
 
-func TestSetupInitialChat_replyAdoptsFields(t *testing.T) {
+func TestSetupInitialChat_replyContinuesPreviousConversation(t *testing.T) {
 	at := time.Date(2026, 9, 9, 9, 0, 0, 0, time.UTC)
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name       string
-		mirrorID   string
-		labelled   bool
-		wantAdopts bool
+		name     string
+		labelled bool
 	}{
-		{name: "mirror carries fields", mirrorID: "globalScope", labelled: true, wantAdopts: true},
-		{name: "pre-feature mirror lacks fields", mirrorID: "globalScope"},
-		{name: "hand-edited id adopts fields the same way", mirrorID: "hand-edited", labelled: true, wantAdopts: true},
+		{name: "labelled conversation keeps its fields", labelled: true},
+		{name: "unlabelled conversation stays unlabelled"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			confDir := t.TempDir()
-			convDir := filepath.Join(confDir, "conversations")
-			if err := os.MkdirAll(convDir, 0o755); err != nil {
-				t.Fatalf("MkdirAll: %v", err)
-			}
-			mirror := pub_models.Chat{
-				Created:  time.Now(),
-				ID:       tc.mirrorID,
-				Messages: []pub_models.Message{{Role: "user", Content: "before"}, {Role: "assistant", Content: "after"}},
+			prev := pub_models.Chat{
+				Created:   created,
+				ID:        "seed-chat",
+				OriginDir: "/origin",
+				Messages:  []pub_models.Message{{Role: "user", Content: "before"}, {Role: "assistant", Content: "after"}},
 			}
 			if tc.labelled {
-				mirror.Title, mirror.Summary, mirror.SummaryAt = "T", "S", at
+				prev.Title, prev.Summary, prev.SummaryAt = "T", "S", at
 			}
-			b, err := json.Marshal(mirror)
-			if err != nil {
-				t.Fatalf("Marshal: %v", err)
-			}
-			if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
+			seedPreviousQuery(t, confDir, prev)
 
 			conf := Default
 			conf.ConfigDir = confDir
@@ -166,21 +140,67 @@ func TestSetupInitialChat_replyAdoptsFields(t *testing.T) {
 				t.Fatalf("SetupInitialChat: %v", err)
 			}
 
-			// LoadGlobalScope normalizes the mirror id to globalScope, so the
-			// reply always forks under a fresh id whatever the file says.
 			got := conf.InitialChat
-			if got.ID == "" || got.ID == tc.mirrorID {
-				t.Fatalf("expected a fresh fork id, got %q", got.ID)
+			if got.ID != prev.ID {
+				t.Fatalf("id = %q, want the previous conversation's %q", got.ID, prev.ID)
 			}
-			if tc.wantAdopts {
-				if got.Title != "T" || got.Summary != "S" || !got.SummaryAt.Equal(at) {
-					t.Fatalf("expected fields adopted from the mirror, got title=%q summary=%q at=%v", got.Title, got.Summary, got.SummaryAt)
-				}
-				return
+			if !got.Created.Equal(created) || got.OriginDir != "/origin" {
+				t.Fatalf("created=%v origin=%q, want the previous conversation's", got.Created, got.OriginDir)
 			}
-			if got.Title != "" || got.Summary != "" || !got.SummaryAt.IsZero() {
-				t.Fatalf("expected an unlabelled fork, got title=%q summary=%q at=%v", got.Title, got.Summary, got.SummaryAt)
+			if got.Title != prev.Title || got.Summary != prev.Summary || !got.SummaryAt.Equal(prev.SummaryAt) {
+				t.Fatalf("title=%q summary=%q at=%v, want %q %q %v", got.Title, got.Summary, got.SummaryAt, prev.Title, prev.Summary, prev.SummaryAt)
 			}
 		})
+	}
+}
+
+func TestSetupInitialChat_replyAdoptsThePreviousConversationWhole(t *testing.T) {
+	confDir := t.TempDir()
+	usage := &pub_models.Usage{TotalTokens: 7}
+	prev := pub_models.Chat{
+		Created:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		ID:               "forked-chat",
+		Source:           "clai",
+		SourceID:         "parent-chat",
+		Profile:          "work",
+		OriginDir:        "/origin",
+		GroupKey:         "group",
+		Title:            "T",
+		Summary:          "S",
+		SummaryAt:        time.Date(2026, 9, 9, 9, 0, 0, 0, time.UTC),
+		TokenUsage:       usage,
+		RecentTokenUsage: usage,
+		Queries:          []pub_models.QueryCost{{Model: "m"}},
+		Messages:         []pub_models.Message{{Role: "user", Content: "before"}, {Role: "assistant", Content: "after"}},
+	}
+	seedPreviousQuery(t, confDir, prev)
+
+	conf := Default
+	conf.ConfigDir = confDir
+	conf.ReplyMode = true
+	conf.InitialChat.Messages = []pub_models.Message{{Role: "user", Content: "glob"}}
+	if err := conf.SetupInitialChat(context.Background(), []string{"q", "more"}); err != nil {
+		t.Fatalf("SetupInitialChat: %v", err)
+	}
+
+	got := conf.InitialChat
+	for name, pair := range map[string][2]string{
+		"Source": {got.Source, "clai"}, "SourceID": {got.SourceID, "parent-chat"},
+		"Profile": {got.Profile, "work"}, "OriginDir": {got.OriginDir, "/origin"},
+		"GroupKey": {got.GroupKey, "group"}, "Title": {got.Title, "T"}, "ID": {got.ID, "forked-chat"},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s = %q, want %q", name, pair[0], pair[1])
+		}
+	}
+	if got.TokenUsage == nil || got.RecentTokenUsage == nil || len(got.Queries) != 1 {
+		t.Errorf("usage or queries dropped: %+v", got)
+	}
+	var contents []string
+	for _, m := range got.Messages {
+		contents = append(contents, m.Content)
+	}
+	if want := []string{"glob", "before", "after", "more"}; !slices.Equal(contents, want) {
+		t.Errorf("messages = %v, want %v", contents, want)
 	}
 }

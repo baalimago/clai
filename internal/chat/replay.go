@@ -16,7 +16,7 @@ import (
 //
 // If dirScoped is true, it prints the most recent message from the conversation
 // bound to the current working directory (and errors if no binding exists).
-// Otherwise it prints the most recent message from the global globalScope.json.
+// Otherwise it prints the most recent message of the previous query's conversation.
 // An image prints as "[image <handle>] <asset path>" (query.8).
 func Replay(ctx context.Context, raw bool, dirScoped bool) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
@@ -27,15 +27,19 @@ func Replay(ctx context.Context, raw bool, dirScoped bool) error {
 		return replayDirScoped(ctx, claiConfDir, raw)
 	}
 
-	prevReply, err := LoadPrevQuery(ctx, claiConfDir)
+	prev, err := LoadPreviousQuery(ctx, claiConfDir)
 	if err != nil {
+		if errors.Is(err, ErrNoPreviousQuery) {
+			runenv.Warnf(ctx, runenv.SubsystemChat, "no previous query found")
+			return errors.New("failed to find any recent reply")
+		}
 		return diag.Errorf("failed to load previous reply: %w", err)
 	}
-	amMessages := len(prevReply.Messages)
+	amMessages := len(prev.Chat.Messages)
 	if amMessages == 0 {
 		return errors.New("failed to find any recent reply")
 	}
-	return printReplayed(ctx, claiConfDir, prevReply.Messages[amMessages-1], raw)
+	return printReplayed(ctx, claiConfDir, prev.Chat.Messages[amMessages-1], raw)
 }
 
 func replayDirScoped(ctx context.Context, claiConfDir string, raw bool) error {

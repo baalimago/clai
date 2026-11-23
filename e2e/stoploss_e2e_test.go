@@ -27,7 +27,7 @@ func runStoplossE2E(t *testing.T, args ...string) (int, string, string) {
 }
 
 // loadSavedStoplossChat reads the conversation file written by the run
-// finalizer (the promoted chat with the generated ID, not globalScope.json).
+// finalizer (the promoted chat with the generated ID).
 func loadSavedStoplossChat(t *testing.T, confDir string) pub_models.Chat {
 	t.Helper()
 	b := e2etest.ReadStringFile(t, e2etest.FindSavedConversationFile(t, confDir))

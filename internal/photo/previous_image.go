@@ -3,7 +3,6 @@ package photo
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
@@ -15,19 +14,19 @@ import (
 var _ PreviousImageFunc = PreviousQueryImage
 
 // PreviousQueryImage is the production PreviousImageFunc: the last ImagePart of
-// globalScope.json, loaded through the conversation Persister. A stored part is
-// read from the asset store; a pending (legacy) part gives its own bytes. No
-// globalScope.json, or one without an image, is ErrNoPreviousImage (query.6).
+// the conversation the previous-query record names. A stored part is read from
+// the asset store; a pending (legacy) part gives its own bytes. No previous
+// query, or one without an image, is ErrNoPreviousImage (query.6).
 func PreviousQueryImage(ctx context.Context, confDir string) (asset.Image, error) {
 	store := asset.NewStore(chat.AssetsDir(confDir))
-	prev, err := chat.NewPersister(confDir, store).Load(ctx, chat.GlobalScopePath(confDir))
-	if errors.Is(err, fs.ErrNotExist) {
+	prev, err := chat.LoadPreviousQuery(ctx, confDir)
+	if errors.Is(err, chat.ErrNoPreviousQuery) {
 		return asset.Image{}, ErrNoPreviousImage
 	}
 	if err != nil {
 		return asset.Image{}, diag.Errorf("load the previous query: %w", err)
 	}
-	img, err := lastImage(prev)
+	img, err := lastImage(prev.Chat)
 	if err != nil {
 		return asset.Image{}, err
 	}

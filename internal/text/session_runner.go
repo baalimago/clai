@@ -72,7 +72,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			session.ShouldSaveReply = session.ShouldSaveReply &&
 				r.querier.loopProgress == nil &&
 				len(session.Chat.Messages) <= 2 &&
-				(session.Chat.ID == "" || session.Chat.ID == "globalScope")
+				session.Chat.ID == ""
 		}
 		// A failed reply persist joins the run's returned error (S8) so a
 		// later -re/-dre cannot silently read stale state; the finalizer runs

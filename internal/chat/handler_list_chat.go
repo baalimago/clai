@@ -630,11 +630,6 @@ func collapseGroupRows(rows []chatListRow) []chatListRow {
 		if r.GroupKey == "" {
 			continue
 		}
-		// The globalScope mirror shares the newest conversation's GroupKey;
-		// grouping it would double-count that conversation's aggregates.
-		if r.ChatID == globalScopeChatID {
-			continue
-		}
 		groups[r.GroupKey] = append(groups[r.GroupKey], i)
 	}
 
@@ -731,7 +726,7 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 	out := make([]chatListRow, 0, len(rows))
 	for _, r := range rows {
-		if r.GroupKey == groupKey && r.Kind != chatRowGroup && r.ChatID != globalScopeChatID {
+		if r.GroupKey == groupKey && r.Kind != chatRowGroup {
 			out = append(out, r)
 		}
 	}
@@ -742,7 +737,7 @@ func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 // the current working directory, plus the wd it was anchored to. Native rows
 // belong when their chat_id is bound to the directory (head + history) or
 // their conversation originated in it; foreign rows when their recorded origin
-// directory is the current directory. The globalScope mirror never belongs: it
+// directory is the current directory. A legacy globalScope mirror never belongs: it
 // duplicates another conversation and carries no directory history of its own.
 //
 // The binding snapshot is taken once at construction. That is safe for a list
@@ -779,9 +774,6 @@ func (cq *ChatHandler) dirScopeRowPredicate() (func(chatListRow) bool, string, b
 	return func(r chatListRow) bool {
 		switch r.Kind {
 		case chatRowNative:
-			if r.ChatID == globalScopeChatID {
-				return false
-			}
 			if _, in := ids[r.ChatID]; in {
 				return true
 			}

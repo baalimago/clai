@@ -143,13 +143,13 @@ func Test_goldenFile_PROFILES_list_warns_when_no_profiles_found(t *testing.T) {
 func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 	// Regression test:
 	// Ensure that when explicitly selecting profile 2 via -p/-profile,
-	// the resulting conversation written to disk (globalScope.json) has
+	// the resulting conversation written to disk (named by the previous-query record) has
 	// the selected profile.
 	//
 	// Note: in query mode, clai only writes a new conversation file when the
 	// run produces both user+assistant messages (i.e. > 2 messages in total).
 	// The "test" model is an echo querier which (in raw mode) doesn't create a
-	// full chat, so this test asserts globalScope.json which is always written.
+	// full chat, so this test asserts the previous query which is always written.
 
 	oldArgs := os.Args
 	t.Cleanup(func() {
@@ -189,7 +189,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}
 	if prev.Profile != profileName {
-		t.Fatalf("globalScope profile: expected %q, got %q", profileName, prev.Profile)
+		t.Fatalf("previous query profile: expected %q, got %q", profileName, prev.Profile)
 	}
 
 	// If a conversation file was also created, it must carry the same profile.
@@ -203,7 +203,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(convDir, name))

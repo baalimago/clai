@@ -257,9 +257,8 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 
 	// When directory reply mode is active, load the dirscope head directly
 	// into InitialChat so that SetupInitialChat uses context from the
-	// directory binding instead of globalScope.json. This eliminates the
-	// filesystem roundtrip (write globalScope then read it back) that was
-	// the root cause of the -dre query forking bug.
+	// directory binding instead of the previous-query record, so -dre never
+	// depends on which conversation the last run happened to write.
 	switch {
 	case tConf.ReplyChatID != "":
 		named, err := chat.LoadConversation(ctx, confDir, tConf.ReplyChatID)

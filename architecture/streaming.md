@@ -73,7 +73,7 @@ CLI (query/chat)
   → querier/chat event loop consumes events
       → prints text as it arrives
       → on tool call: run tool + append messages + continue
-      → on stop: finalize output + persist globalScope/chat
+      → on stop: finalize output + persist the chat + previous-query record
 ```
 
 The important architectural point is that **the querier does not care about the vendor wire format**. It receives a single stream of normalized events.
@@ -192,7 +192,7 @@ The consumer loop (see `internal/text/querier.go`, and chat equivalents) is resp
 
 4. **Post-processing**
    - Append the assistant message to the chat
-   - Save `globalScope.json` for reply mode
+   - Persist the conversation and write the previous-query record
    - In non-raw mode, pretty-print the final output (glow, etc.)
 
 ## Vendor Streaming Differences (and How They Get Normalized)

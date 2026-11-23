@@ -170,17 +170,15 @@ func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession)
 			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to stamp origin directory: %v\n", originErr)
 		}
 		q.chat = session.Chat
-		if err := q.imageWiring().Persister.Promote(ctx, session.Chat); err != nil {
+		if err := q.imageWiring().Persister.Promote(ctx, session.Chat, runOutcome(session)); err != nil {
 			persistErr = diag.Errorf("failed to save previous query: %w", err)
 		} else if err := q.reportChat(session.Chat.ID); err != nil {
 			persistErr = err
 		}
-		// History recording is always-on for non-reply queries. A plain -re forks a
-		// fresh promoted id, so recording it would pollute the history with
-		// near-duplicates; but a directory reply (-dre) continues the bound
-		// conversation in place (same id), so recording it just bumps that entry —
-		// it keeps the directory's history current and the binding chainable.
-		if (!q.replyMode || q.dirReplyMode) && session.Chat.ID != "" && session.Chat.ID != "globalScope" {
+		// History recording is always-on: every run writes one conversation file and
+		// a reply continues that same file, so recording it bumps the entry rather
+		// than adding a near-duplicate.
+		if session.Chat.ID != "" {
 			if updateErr := chat.UpdateDirScopeFromCWD(ctx, q.configDir, session.Chat.ID); updateErr != nil {
 				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to update directory-scoped binding: %v\n", updateErr)
 			}
@@ -190,4 +188,11 @@ func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession)
 		runenv.Tracef(f.querier.diagContext(), runenv.SubsystemTextQuerier, "Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q))
 	}
 	return persistErr
+}
+
+func runOutcome(session *QuerySession) chat.RunOutcome {
+	if session.Failed {
+		return chat.RunFailedBeforeAnswer
+	}
+	return chat.RunAnswered
 }

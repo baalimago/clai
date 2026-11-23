@@ -23,13 +23,16 @@ func conversationPathFromDir(convDir, chatID string) string {
 	return filepath.Join(convDir, conversationFileName(chatID))
 }
 
-// GlobalScopePath is the previous query's conversation file under confDir.
-func GlobalScopePath(confDir string) string {
-	return filepath.Join(conversationsDir(confDir), globalScopeFile)
+// previousQueryStateDir holds the machine-local conversation state that is not
+// a conversation: it sits one level below the conversations dir so the index,
+// the asset sweep and the cloud sync allowlist skip it by construction.
+func previousQueryStateDir(confDir string) string {
+	return filepath.Join(conversationsDir(confDir), "state")
 }
 
-func prevQueryPath(confDir string) string {
-	return filepath.Join(conversationsDir(confDir), prevQueryFile)
+// PreviousQueryPath is the previous-query record under confDir.
+func PreviousQueryPath(confDir string) string {
+	return filepath.Join(previousQueryStateDir(confDir), "previousQuery.json")
 }
 
 func dirscopeRoot(confDir string) string {

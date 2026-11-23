@@ -61,7 +61,7 @@ func FindSavedConversationFile(t *testing.T, confDir string) string {
 		t.Fatalf("ReadDir(conversations): %v", err)
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "globalScope.json" || entry.Name() == "seed.json" {
+		if entry.IsDir() || entry.Name() == "seed.json" {
 			continue
 		}
 		return filepath.Join(confDir, "conversations", entry.Name())
@@ -98,6 +98,16 @@ func SeedConv(t *testing.T, convDir string, c pub_models.Chat) {
 	t.Helper()
 	if err := chat.Save(context.Background(), convDir, c); err != nil {
 		t.Fatalf("Save(%q): %v", c.ID, err)
+	}
+}
+
+// SeedPreviousConv saves c and makes it the conversation the next -re
+// continues, the state any finished query leaves behind.
+func SeedPreviousConv(t *testing.T, confDir string, c pub_models.Chat) {
+	t.Helper()
+	SeedConv(t, filepath.Join(confDir, "conversations"), c)
+	if err := chat.SavePreviousQuery(context.Background(), confDir, c.ID, time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery(%q): %v", c.ID, err)
 	}
 }
 

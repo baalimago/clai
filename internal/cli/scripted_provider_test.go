@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/baalimago/clai/internal/chat"
 )
 
 // providerStep answers request n (from 1) of a scripted provider.
@@ -155,22 +158,27 @@ func recordTypes(t *testing.T, stream string) []string {
 // persisted as the previous query.
 func savedMessages(t *testing.T) []string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(os.Getenv("CLAI_CONFIG_DIR"), "conversations", "globalScope.json"))
+	confDir := os.Getenv("CLAI_CONFIG_DIR")
+	prev, err := chat.LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("resolve the previous query: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(confDir, "conversations", prev.Chat.ID+".json"))
 	if err != nil {
 		t.Fatalf("read the persisted conversation: %v", err)
 	}
-	var chat struct {
+	var conv struct {
 		Messages []struct {
 			Role      string            `json:"role"`
 			Content   any               `json:"content"`
 			ToolCalls []json.RawMessage `json:"tool_calls"`
 		} `json:"messages"`
 	}
-	if err := json.Unmarshal(raw, &chat); err != nil {
+	if err := json.Unmarshal(raw, &conv); err != nil {
 		t.Fatalf("decode the persisted conversation: %v", err)
 	}
 	var out []string
-	for _, m := range chat.Messages {
+	for _, m := range conv.Messages {
 		if m.Role == "system" {
 			continue
 		}

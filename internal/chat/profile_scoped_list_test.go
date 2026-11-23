@@ -8,7 +8,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestReadChatIndex_DoesNotDropDirScopedChatsWhenGlobalScopeHasSameProfile(t *testing.T) {
+func TestReadChatIndex_DoesNotDropChatsSharingAProfile(t *testing.T) {
 	convDir := t.TempDir()
 
 	dirScoped := pub_models.Chat{
@@ -24,7 +24,7 @@ func TestReadChatIndex_DoesNotDropDirScopedChatsWhenGlobalScopeHasSameProfile(t 
 	}
 
 	global := pub_models.Chat{
-		ID:      globalScopeChatID,
+		ID:      "global-chat",
 		Created: time.Date(2026, 4, 9, 11, 0, 0, 0, time.UTC),
 		Profile: "gopher",
 		Messages: []pub_models.Message{
@@ -53,6 +53,6 @@ func TestReadChatIndex_DoesNotDropDirScopedChatsWhenGlobalScopeHasSameProfile(t 
 		t.Fatalf("expected dir-scoped chat id %q in index rows: %#v", dirScoped.ID, rows)
 	}
 	if !seen[global.ID] {
-		t.Fatalf("expected global scope chat id %q in index rows: %#v", global.ID, rows)
+		t.Fatalf("expected the second chat id %q in index rows: %#v", global.ID, rows)
 	}
 }

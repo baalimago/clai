@@ -69,7 +69,7 @@ internal/cli:Run()
 
 `Configurations.SetupPrompts()` in `internal/video/prompt.go`:
 
-1. If **reply mode** (`-re`): loads `globalScope.json`, serializes its messages as JSON context and
+1. If **reply mode** (`-re`): loads the conversation the previous-query record names, serializes its messages as JSON context and
    prepends it to the prompt. Every image in that copy is its `[image <handle>]` text
    (`chat.ImagesDescribed`), so a text-only context is byte-identical to what it was before images.
 2. Runs `imageinput.ImageCollector.Collect` (see [query.md](./query.md#image-input-collection)) over

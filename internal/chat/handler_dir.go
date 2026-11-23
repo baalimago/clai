@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -316,17 +315,20 @@ func (cq *ChatHandler) resolveChatDirInfo(ctx context.Context) (chatDirInfo, err
 		}
 	}
 
-	// 2) Global scope
-	prev, err := FromPath(ctx, filepath.Join(cq.convDir, globalScopeFile))
+	// 2) Global scope: the conversation the latest run wrote.
+	prev, err := LoadPreviousQuery(ctx, cq.confDir)
 	if err == nil {
-		info := cq.infoFromChat("global", globalScopeChatID, prev)
-		info.ConversationCreated = prev.Created.Format("2006-01-02T15:04:05Z07:00")
-		initialMsg, _ := prev.FirstUserMessage()
+		info := cq.infoFromChat("global", prev.Chat.ID, prev.Chat)
+		if !prev.Updated.IsZero() {
+			info.Updated = prev.Updated.Format("2006-01-02T15:04:05Z07:00")
+		}
+		info.ConversationCreated = prev.Chat.Created.Format("2006-01-02T15:04:05Z07:00")
+		initialMsg, _ := prev.Chat.FirstUserMessage()
 		info.initialMessage = initialMsg.String()
 		return info, nil
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return chatDirInfo{}, diag.Errorf("load globalScope: %w", err)
+	if !errors.Is(err, ErrNoPreviousQuery) && !errors.Is(err, ErrPreviousQueryGone) {
+		return chatDirInfo{}, diag.Errorf("load previous query: %w", err)
 	}
 
 	return chatDirInfo{}, nil

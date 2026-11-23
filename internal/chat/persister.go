@@ -41,12 +41,15 @@ type Persister interface {
 	// Promote persists chat as the previous query. It writes the same files today's
 	// chat.SaveAsPreviousQuery writes for the same chat: a newly promoted conversation
 	// when the chat has no persisted id and more than two messages, then
-	// globalScope.json, then the chat's own conversation file when it has an id.
+	// the chat's own conversation file when it has an id, then the previous-query
+	// record naming the conversation written.
 	//  1. Each file is written under Save.1–3.
 	//  2. Every copy references the same asset files, and no asset is duplicated (C3).
 	//  3. A text-only chat yields the same files, byte for byte, as SaveAsPreviousQuery
 	//     does today (I10).
-	Promote(ctx context.Context, chat pub_models.Chat) error
+	//  4. A fresh chat whose outcome is RunFailedBeforeAnswer is promoted too, though it
+	//     ends on its user message, so the record names it and -re retries its prompt.
+	Promote(ctx context.Context, chat pub_models.Chat, outcome RunOutcome) error
 	// Load reads the conversation at path.
 	//  1. A legacy inline image arrives from the codec as a pending ImagePart. Load
 	//     checks its bytes with asset.Sniff. It fails with asset.ErrNotImage when they
@@ -59,7 +62,7 @@ type Persister interface {
 	Load(ctx context.Context, path string) (pub_models.Chat, error)
 	// Delete removes conversation chatID and its reasoning sidecar, as today. It then
 	// sweeps every asset that no remaining conversation file references,
-	// globalScope.json included (C3).
+	// the legacy globalScope.json mirror included (C3).
 	//  1. It returns the sweep's count.
 	//  2. When the sweep fails after the conversation was removed, it returns
 	//     *SweepFailedError wrapping the cause. The conversation stays deleted.
@@ -116,8 +119,8 @@ func (p persister) Save(ctx context.Context, chat pub_models.Chat) (pub_models.C
 	return saveChat(ctx, p.convDir, p.store, chat, withIndex)
 }
 
-func (p persister) Promote(ctx context.Context, chat pub_models.Chat) error {
-	return promote(ctx, p.confDir, p.store, chat)
+func (p persister) Promote(ctx context.Context, chat pub_models.Chat, outcome RunOutcome) error {
+	return promote(ctx, p.confDir, p.store, chat, outcome)
 }
 
 func (p persister) Load(ctx context.Context, path string) (pub_models.Chat, error) {

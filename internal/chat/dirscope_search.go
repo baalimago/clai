@@ -111,11 +111,6 @@ func (s *bruteForceSearcher) Search(ctx context.Context, req SearchRequest) (Sea
 	matches := make([]SearchResultRow, 0)
 	scanned := 0
 	for _, row := range rows {
-		// globalScope is a transient pointer to the most recent conversation; it
-		// would double-count the real conversation it mirrors.
-		if row.ID == globalScopeChatID {
-			continue
-		}
 		if !originMatches(row.OriginDir, dir, req.Subtree) {
 			continue
 		}

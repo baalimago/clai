@@ -31,7 +31,9 @@ var SkipIndex bool
 // chatIndexVersion is bumped when the cache schema changes incompatibly.
 //
 //	2 — GroupKey field added (content-hash grouping)
-const chatIndexVersion = 2
+//	3 — the previous-query mirror stopped being a conversation: its row is
+//	    skipped on rebuild, so a pre-v3 cache holding one is rebuilt without it
+const chatIndexVersion = 3
 
 type chatIndexCache struct {
 	Version int            `json:"version"`
@@ -246,7 +248,7 @@ func rebuildChatIndex(ctx context.Context, convDir string, fromVersion int, reas
 	}
 	total := 0
 	for _, f := range files {
-		if !f.IsDir() && !isIndexFile(f.Name()) {
+		if !f.IsDir() && !isIndexFile(f.Name()) && !isLegacyMirrorFile(f.Name()) {
 			total++
 		}
 	}
@@ -272,7 +274,7 @@ func rebuildChatIndex(ctx context.Context, convDir string, fromVersion int, reas
 	batchSize := indexProgressBatch
 
 	for _, file := range files {
-		if file.IsDir() || isIndexFile(file.Name()) {
+		if file.IsDir() || isIndexFile(file.Name()) || isLegacyMirrorFile(file.Name()) {
 			continue
 		}
 		chatPath := path.Join(convDir, file.Name())

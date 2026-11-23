@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
@@ -60,11 +61,14 @@ func TestLoadPrevQuery_TraceShowsLoadedConversationIDWhenDebugEnabled(t *testing
 		t.Fatalf("mkdir conversations: %v", err)
 	}
 	chat := pub_models.Chat{
-		ID:       "globalScope",
+		ID:       "trace-chat",
 		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
 	}
 	if err := Save(procenv.Context(context.Background()), convDir, chat); err != nil {
-		t.Fatalf("save global scope chat: %v", err)
+		t.Fatalf("save chat: %v", err)
+	}
+	if err := SavePreviousQuery(procenv.Context(context.Background()), confDir, chat.ID, time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
 	}
 
 	t.Setenv("DEBUG", "false")
@@ -85,7 +89,7 @@ func TestLoadPrevQuery_TraceShowsLoadedConversationIDWhenDebugEnabled(t *testing
 			t.Fatalf("LoadPrevQuery with debug: %v", err)
 		}
 	})
-	if !strings.Contains(withDebug, `chat_id="globalScope"`) {
+	if !strings.Contains(withDebug, `chat_id="trace-chat"`) {
 		t.Fatalf("expected trace output to mention loaded conversation id, got %q", withDebug)
 	}
 }
