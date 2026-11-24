@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/diag"
@@ -109,10 +110,73 @@ func (st *state) save(confDir string, store Store) error {
 // files and the trash stay.
 func ResetState(confDir string) error {
 	var errs []error
-	for _, d := range []string{"state", "base", "theirs"} {
-		errs = append(errs, os.RemoveAll(filepath.Join(cloud.Dir(confDir), d)))
+	for _, store := range Stores {
+		errs = append(errs, ResetStoreState(confDir, store))
 	}
 	return errors.Join(errs...)
+}
+
+// ResetStoreState forgets one store's state, base copies and conflict
+// copies, so the next pull takes the account's copy of every path. Local
+// files and the trash stay.
+func ResetStoreState(confDir string, store Store) error {
+	errs := []error{os.RemoveAll(statePath(confDir, store))}
+	for _, dir := range []string{"base", "theirs"} {
+		errs = append(errs, removeCopies(filepath.Join(cloud.Dir(confDir), dir), store))
+	}
+	for _, dir := range []string{"state", "base", "theirs"} {
+		errs = append(errs, removeEmptyDirs(filepath.Join(cloud.Dir(confDir), dir)))
+	}
+	return errors.Join(errs...)
+}
+
+// removeCopies deletes one store's copies under a root that mirrors the
+// config dir, and leaves the other store's alone.
+func removeCopies(root string, store Store) error {
+	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		if s, ok := StoreOf(filepath.ToSlash(rel)); ok && s == store {
+			return os.Remove(p)
+		}
+		return nil
+	})
+}
+
+// removeEmptyDirs deletes root and the directories under it that hold no
+// file, so a reset leaves no scaffolding behind.
+func removeEmptyDirs(root string) error {
+	var dirs []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			dirs = append(dirs, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, dir := range slices.Backward(dirs) {
+		// A directory that still holds another store's copies stays.
+		if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // The per-machine directories under cloud/, each mirroring the config

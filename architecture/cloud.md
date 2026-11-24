@@ -39,7 +39,7 @@ for the login).
 | `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
 | `internal/cloud/sync/conversation.go` | `Engine.PullConversation`: the one-conversation pull behind `cc:<chatID>`; `ConversationPuller`, `ConversationPull`, `ConversationOutcome` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
-| `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `status`, `diff`, `pull`, `commit`, `resolve`, `log`) and their output; `publish` stays callable as a hidden alias, because `clai config publish` is the documented spelling; `ExitDecisionNeeded` |
+| `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `status`, `diff`, `pull`, `reset`, `commit`, `resolve`, `log`) and their output; `publish` stays callable as a hidden alias, because `clai config publish` is the documented spelling; `ExitDecisionNeeded` |
 | `internal/profiles/models.go` | `PublishInteractive` walks `clai config publish [kind [name [mode]]]`: each argument given picks its level (kind, item, then an alias's mode: `text`, `photo`, `audio` or its index), each one missing is asked in a selector. `HubKindNames` and `KindsCarrying` let `config publish` infer a bare name's kind. `PublishAlias` publishes one mode config's alias to `/api/v1/hub`; an alias in several mode configs with no mode and no input is an `AmbiguousAliasError` |
 | `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style` (an alias of `look.Style`): the grouped status table |
@@ -75,6 +75,9 @@ commit   refuse while conflicts are open (exit 4)
          -> missing blobs -> POST blobs/batch, gzipped (files up to 512 kB, up to 250 a request, packed by size) or PUT blobs/<sha>,
             8 requests at once -> POST stores/<s>/commit {message, changes[base_rev]}
          the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
+reset    forget the store's state, base and conflict copies (sync.ResetStoreState), then pull
+         it with -theirs: the account's copy of every path wins, a local one to cloud/trash/
+         settings only; -conversations, or the store's own name, adds conversations
 resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>
 log      GET stores/<s>/log?limit=
 ```
@@ -101,6 +104,15 @@ log      GET stores/<s>/log?limit=
   Without a terminal on stdin (a real one: `/dev/null` is a character
   device but not a terminal, `isTerminal` in `cloudcmd/term_*.go`) it
   stops with exit 4, changes nothing and prints the two flags.
+- **A reset is the account's copy, wholesale.** `reset` calls
+  `sync.ResetStoreState` (one store's state file, and its base and conflict
+  copies, leaving the other store's alone) and then pulls the store with
+  `-theirs`, so a path this machine deleted comes back and a path it edited
+  is trashed. A path the account does not have stays: `status` lists it as
+  a change to commit or delete. Login and logout still call `ResetState`,
+  which does the same for both stores. A reset takes the settings store
+  only: conversations are billed and far larger, so `-conversations` (or
+  naming the store) is what adds them.
 - **A conflict never touches the local file.** The server's side is written to
   `cloud/theirs/<path>` and recorded in the state; commit refuses until
   `resolve` settles it. `diff` shows base, mine and theirs.

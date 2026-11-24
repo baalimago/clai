@@ -166,9 +166,12 @@ func billingLine(me cloud.Me) string {
 }
 
 // stores reads a [store] argument; none means both.
-func stores(args []string) ([]sync.Store, error) {
+func stores(args []string) ([]sync.Store, error) { return namedStores(args, sync.Stores) }
+
+// namedStores reads a [store] argument, and answers none for no argument.
+func namedStores(args []string, none []sync.Store) ([]sync.Store, error) {
 	if len(args) == 0 {
-		return sync.Stores, nil
+		return none, nil
 	}
 	if len(args) > 1 {
 		return nil, &UsageError{Msg: "name at most one store: settings or conversations"}
@@ -178,6 +181,16 @@ func stores(args []string) ([]sync.Store, error) {
 		return nil, &UsageError{Msg: fmt.Sprintf("unknown store %q: use settings or conversations", args[0])}
 	}
 	return []sync.Store{s}, nil
+}
+
+// resetStores is reset's narrower default: the settings store, unless
+// -conversations opts into the billed, larger conversations store too.
+func resetStores(args []string, conversations bool) ([]sync.Store, error) {
+	which, err := namedStores(args, []sync.Store{sync.StoreConfig})
+	if err != nil || !conversations || (len(which) == 1 && which[0] == sync.StoreConversations) {
+		return which, err
+	}
+	return sync.Stores, nil
 }
 
 func (r *runner) status(ctx context.Context, args []string, imports, raw bool) error {
@@ -354,6 +367,40 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	}
 	if needsDecision {
 		r.deps.SetExit(ExitDecisionNeeded)
+	}
+	return nil
+}
+
+// reset forgets this machine's sync state for the store, then pulls it, so
+// the settings kept on clai.chat replace whatever this machine holds.
+func (r *runner) reset(ctx context.Context, args []string, conversations, raw bool) error {
+	which, err := resetStores(args, conversations)
+	if err != nil {
+		return err
+	}
+	_, engine, err := r.session()
+	if err != nil {
+		return err
+	}
+	results := make([]sync.PullResult, 0, len(which))
+	for _, s := range which {
+		status := r.track(engine, "resetting "+sync.StoreName(s))
+		var res sync.PullResult
+		err := sync.ResetStoreState(engine.ConfDir, s)
+		if err == nil {
+			res, err = engine.Pull(ctx, s, sync.PullOptions{Mode: sync.ModeTheirs})
+		}
+		status.Stop()
+		if err != nil {
+			return r.explain(err)
+		}
+		results = append(results, res)
+		if !raw {
+			r.lines(resetLines(res, r.style()))
+		}
+	}
+	if raw {
+		return r.json(results)
 	}
 	return nil
 }

@@ -134,7 +134,7 @@ func (e *UsageError) Error() string { return e.Msg }
 // subcommandNames is the order help and errors list the subcommands in.
 // `publish` is a hidden alias now that `config publish` is the documented
 // spelling, so it appears in no listing.
-var subcommandNames = []string{"login", "logout", "whoami", "status", "diff", "pull", "commit", "resolve", "log"}
+var subcommandNames = []string{"login", "logout", "whoami", "status", "diff", "pull", "reset", "commit", "resolve", "log"}
 
 // UnknownSubcommandError is `clai cloud <name>` for a name that is not one.
 type UnknownSubcommandError struct{ Name string }
@@ -199,6 +199,9 @@ Sync
   pull [store] [-theirs|-mine]    bring down server changes; on a clash
                                   -theirs keeps your account's copy,
                                   -mine this machine's
+  reset [store] [-conversations]  forget this machine's sync state, then pull:
+                                  your account's copy of the settings wins;
+                                  conversations need -conversations
   commit [-m msg] [-imports] [store|path...]   upload your changes
   resolve <path> [-mine|-theirs]  settle a conflict
   log [store] [-limit N]          recent commits
@@ -216,6 +219,7 @@ Examples:
   clai cloud login
   clai cloud status
   clai cloud commit -m "new review profile"
+  clai cloud reset -conversations
   clai cloud pull conversations -theirs -r`
 
 // Command builds the cloud command tree.
@@ -253,8 +257,8 @@ func Command(deps Deps) *internal.Command {
 
 	var loginURL, loginName string
 	var publishOpts PublishOptions
-	whoamiRaw, statusRaw, pullRaw, commitRaw, logRaw := internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}
-	var statusImports, diffRemote, diffList, pullTheirs, pullMine, commitImports, resolveMine, resolveTheirs bool
+	whoamiRaw, statusRaw, pullRaw, resetRaw, commitRaw, logRaw := internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}
+	var statusImports, diffRemote, diffList, pullTheirs, pullMine, resetConversations, commitImports, resolveMine, resolveTheirs bool
 	var commitMsg string
 	logN := 20
 	c.Subs = map[string]cmd.Command{
@@ -315,6 +319,13 @@ func Command(deps Deps) *internal.Command {
 				fs.BoolVar(&pullMine, "mine", false, "keep this machine's copy of files both sides changed, to commit")
 			}, &pullRaw, func(ctx context.Context, args []string) error {
 				return r.pull(ctx, args, pullTheirs, pullMine, pullRaw.Value())
+			}),
+		"reset": sub("reset", "Take your account's copy of your settings",
+			"cloud reset [store] [-conversations]. Forgets this machine's sync state for the store, then\npulls it, so the files kept on clai.chat replace this machine's. Files you changed go to\ncloud/trash/; files your account does not have stay, and status lists them.\nThe conversations store is billed, so only -conversations or its name resets it.",
+			func(fs *flag.FlagSet) {
+				fs.BoolVar(&resetConversations, "conversations", false, "reset the conversations store too")
+			}, &resetRaw, func(ctx context.Context, args []string) error {
+				return r.reset(ctx, args, resetConversations, resetRaw.Value())
 			}),
 		"commit": sub("commit", "Upload your changes",
 			"cloud commit [-m msg] [store|path...]. One commit per store. Refused while conflicts are open,\nand when the server changed a file since your last pull.",
