@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -284,6 +285,115 @@ func TestCommit_behindExits4(t *testing.T) {
 		t.Fatalf("code %d: %s", code, out)
 	}
 	mustContain(t, out, "▸ settings · not committed · your account has 1 newer file", "~ profiles/x.json   #2 \"edit profiles/x.json\" · other", "→ clai cloud pull settings")
+}
+
+// Reset makes the account's settings the ones this machine runs on: a file
+// deleted here comes back, an edit here goes to the trash.
+func TestReset_takesTheAccountsCopy(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	h.write("profiles/x.json", "settings\n")
+	h.write("mcpServers/slivingdoc.json", `{"name":"slivingdoc_main"}`)
+	h.run("commit", "-m", "settings")
+	if err := os.Remove(filepath.Join(h.confDir, "mcpServers", "slivingdoc.json")); err != nil {
+		t.Fatal(err)
+	}
+	h.write("profiles/x.json", "edited here\n")
+	code, out := h.run("reset", "settings")
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, out)
+	}
+	mustContain(t, out, "▸ settings · pulled #1", "2 added", "1 replaced", "cloud/trash/",
+		"forgotten first", "→ clai cloud status settings")
+	if h.read("mcpServers/slivingdoc.json") == "" {
+		t.Fatal("reset did not restore the deleted file")
+	}
+	if h.read("profiles/x.json") != "settings\n" {
+		t.Fatalf("profile = %q", h.read("profiles/x.json"))
+	}
+	if _, out := h.run("status", "settings"); !strings.Contains(out, "up to date") {
+		t.Fatalf("status after reset:\n%s", out)
+	}
+	code, out = h.run("reset", "settings", "-r")
+	if code != 0 || !strings.HasPrefix(strings.TrimSpace(out), "[") {
+		t.Fatalf("raw reset %d: %s", code, out)
+	}
+	if code, _ := h.run("reset", "chats"); code != 1 {
+		t.Fatal("unknown store accepted")
+	}
+}
+
+// A bare reset takes the settings store: the conversations store is billed
+// and large, so it waits for -conversations or for its own name.
+func TestReset_leavesConversationsAlone(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	h.write("profiles/x.json", "settings\n")
+	h.write("conversations/c1.json", `{"title":"mine","messages":[{"role":"user","content":"hi"}]}`)
+	if code, out := h.run("commit", "-m", "both"); code != 0 {
+		t.Fatalf("commit %d: %s", code, out)
+	}
+	h.srv.Put("config", "profiles/x.json", "theirs\n")
+	h.srv.Put("conversations", "conversations/c1.json", `{"title":"theirs","messages":[{"role":"user","content":"hi"}]}`)
+
+	code, out := h.run("reset")
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, out)
+	}
+	mustContain(t, out, "▸ settings · pulled #2", "→ clai cloud status settings")
+	if strings.Contains(out, "conversations") {
+		t.Fatalf("a bare reset touched conversations:\n%s", out)
+	}
+	if got := h.read("profiles/x.json"); got != "theirs\n" {
+		t.Fatalf("settings = %q", got)
+	}
+	if got := h.read("conversations/c1.json"); !strings.Contains(got, "mine") {
+		t.Fatalf("conversations file = %q, so the bare reset pulled it", got)
+	}
+	if _, err := os.Stat(filepath.Join(cloud.Dir(h.confDir), "state", "conversations.json")); err != nil {
+		t.Fatalf("a bare reset forgot the conversations state: %v", err)
+	}
+
+	code, out = h.run("reset", "-r")
+	var res []sync.PullResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil || code != 0 || len(res) != 1 || res[0].Store != sync.StoreConfig {
+		t.Fatalf("raw reset = %d %s", code, out)
+	}
+
+	code, out = h.run("reset", "-conversations")
+	if code != 0 {
+		t.Fatalf("code %d: %s", code, out)
+	}
+	mustContain(t, out, "▸ settings ·", "▸ conversations · pulled #2", "1 replaced", "cloud/trash/")
+	if got, want := h.read("conversations/c1.json"), `{"title":"theirs","messages":[{"role":"user","content":"hi"}]}`; got != want {
+		t.Fatalf("conversations file = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(cloud.Dir(h.confDir), "state", "conversations.json")); err != nil {
+		t.Fatalf("-conversations kept no sync state: %v", err)
+	}
+}
+
+func TestResetStores(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		args          []string
+		conversations bool
+		want          []sync.Store
+	}{
+		{"bare", nil, false, []sync.Store{sync.StoreConfig}},
+		{"flag", nil, true, sync.Stores},
+		{"named conversations", []string{"conversations"}, false, []sync.Store{sync.StoreConversations}},
+		{"named conversations and the flag", []string{"conversations"}, true, []sync.Store{sync.StoreConversations}},
+		{"named settings and the flag", []string{"settings"}, true, sync.Stores},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resetStores(tc.args, tc.conversations)
+			if err != nil || !slices.Equal(got, tc.want) {
+				t.Fatalf("resetStores(%q, %v) = %v, %v, want %v", tc.args, tc.conversations, got, err, tc.want)
+			}
+		})
+	}
+	if _, err := resetStores([]string{"chats"}, true); err == nil {
+		t.Fatal("resetStores accepted an unknown store")
+	}
 }
 
 func TestPull_conflictThenResolve(t *testing.T) {

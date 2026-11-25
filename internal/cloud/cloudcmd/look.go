@@ -166,6 +166,15 @@ func pullLines(res sync.PullResult, s style) []string {
 	return lines
 }
 
+// resetLines is what a reset pulled, and the one thing it cannot bring
+// down: a file this machine holds and the account does not.
+func resetLines(res sync.PullResult, s style) []string {
+	lines := append(pullLines(res, s), "  "+s.Secondary("this machine's sync state was forgotten first, so your account's copy won every clash"))
+	return append(lines, look.Grid("  ", [][]string{
+		next("clai cloud status "+sync.StoreName(res.Store), "list the files your account does not have"),
+	}, s)...)
+}
+
 func conflictsOpenLines(e *sync.ConflictsOpenError, s style) []string {
 	n := len(e.Paths)
 	lines := []string{s.Head(sync.StoreName(e.Store), "not committed", count(n)+" "+plural(n, "conflict", "conflicts")+" to resolve first")}
